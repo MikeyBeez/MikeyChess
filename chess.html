@@ -44,6 +44,9 @@
   .piece{font-size:10.5cqw; line-height:1; pointer-events:none; transform:translateY(-3%)}
   .piece.w{color:#fff; text-shadow:0 0 2px #000, 0 1px 2px rgba(0,0,0,.7)}
   .piece.b{color:#1a1a1a; text-shadow:0 0 2px rgba(255,255,255,.25)}
+  /* sliding piece during a move */
+  .floatpiece{position:absolute; display:flex; align-items:center; justify-content:center;
+    z-index:6; pointer-events:none; transition:transform .32s cubic-bezier(.22,.61,.36,1)}
 
   #thinking{position:absolute; left:50%; top:-2px; transform:translate(-50%,-100%); font-size:12px;
     color:#9bc700; display:none; padding:2px 8px}
@@ -70,7 +73,8 @@
   .hint{font-size:11px; opacity:.55; margin-top:2px}
 
   /* status + moves */
-  #status{font-size:15px; color:var(--bright); min-height:22px; margin-bottom:6px}
+  #status{font-size:15px; color:var(--bright); min-height:22px; margin-bottom:4px}
+  #opening{font-size:12.5px; color:#9bc700; min-height:16px; margin-bottom:8px; opacity:.9}
   #moves{max-height:240px; overflow-y:auto; font-size:14px; line-height:1.7;
     display:grid; grid-template-columns:34px 1fr 1fr; gap:0 4px}
   #moves .num{opacity:.5; text-align:right; padding-right:4px}
@@ -141,6 +145,7 @@
 
     <div class="card">
       <div id="status">Loading…</div>
+      <div id="opening"></div>
       <div id="moves"></div>
       <div id="navBtns">
         <button id="navStart" title="First move">⏮</button>
@@ -152,6 +157,7 @@
         <button id="takebackBtn">Takeback</button>
         <button id="resignBtn">Resign</button>
         <button id="flipBtn">Flip board</button>
+        <button id="movesBtn">Copy moves</button>
         <button id="pgnBtn">Copy PGN</button>
       </div>
     </div>
@@ -292,6 +298,93 @@ let engineThinking = false;
 let pendingPromo = null;             // {from,to}
 let analysis = null;                 // {evals[], best[], judgments[], depth}
 let analyzing = false;
+let animating = false;               // a piece is currently sliding
+
+/* ---- opening book: SAN prefix -> name (longest match wins) ---- */
+const OPENINGS = {
+  "e4":"King's Pawn Opening",
+  "e4 e5":"Open Game",
+  "e4 e5 Nf3":"King's Knight Opening",
+  "e4 e5 Nf3 Nc6":"King's Knight, Normal",
+  "e4 e5 Nf3 Nc6 Bb5":"Ruy López (Spanish)",
+  "e4 e5 Nf3 Nc6 Bb5 a6":"Ruy López, Morphy Defense",
+  "e4 e5 Nf3 Nc6 Bb5 a6 Ba4 Nf6":"Ruy López, Closed",
+  "e4 e5 Nf3 Nc6 Bb5 Nf6":"Ruy López, Berlin Defense",
+  "e4 e5 Nf3 Nc6 Bc4":"Italian Game",
+  "e4 e5 Nf3 Nc6 Bc4 Bc5":"Italian Game, Giuoco Piano",
+  "e4 e5 Nf3 Nc6 Bc4 Bc5 b4":"Evans Gambit",
+  "e4 e5 Nf3 Nc6 Bc4 Nf6":"Two Knights Defense",
+  "e4 e5 Nf3 Nc6 d4":"Scotch Game",
+  "e4 e5 Nf3 Nc6 d4 exd4 Bc4":"Scotch Gambit",
+  "e4 e5 Nf3 Nc6 c3":"Ponziani Opening",
+  "e4 e5 Nf3 Nf6":"Petrov (Russian) Defense",
+  "e4 e5 Nf3 d6":"Philidor Defense",
+  "e4 e5 Nc3":"Vienna Game",
+  "e4 e5 f4":"King's Gambit",
+  "e4 e5 Bc4":"Bishop's Opening",
+  "e4 c5":"Sicilian Defense",
+  "e4 c5 Nf3":"Sicilian Defense",
+  "e4 c5 Nf3 d6":"Sicilian, Najdorf-system",
+  "e4 c5 Nf3 d6 d4 cxd4 Nxd4 Nf6 Nc3 a6":"Sicilian, Najdorf",
+  "e4 c5 Nf3 d6 d4 cxd4 Nxd4 Nf6 Nc3 g6":"Sicilian, Dragon",
+  "e4 c5 Nf3 Nc6":"Sicilian, Old/Classical",
+  "e4 c5 Nf3 e6":"Sicilian, Paulsen/Taimanov",
+  "e4 c5 c3":"Sicilian, Alapin",
+  "e4 c5 Nc3":"Sicilian, Closed",
+  "e4 e6":"French Defense",
+  "e4 e6 d4 d5":"French Defense",
+  "e4 c6":"Caro-Kann Defense",
+  "e4 c6 d4 d5":"Caro-Kann Defense",
+  "e4 d6":"Pirc Defense",
+  "e4 g6":"Modern Defense",
+  "e4 d5":"Scandinavian Defense",
+  "e4 Nf6":"Alekhine's Defense",
+  "d4":"Queen's Pawn Opening",
+  "d4 d5":"Closed Game",
+  "d4 d5 c4":"Queen's Gambit",
+  "d4 d5 c4 dxc4":"Queen's Gambit Accepted",
+  "d4 d5 c4 e6":"Queen's Gambit Declined",
+  "d4 d5 c4 c6":"Slav Defense",
+  "d4 d5 Nf3":"Queen's Pawn, Symmetrical",
+  "d4 Nf6":"Indian Defense",
+  "d4 Nf6 c4 e6":"Indian, Queen's Pawn",
+  "d4 Nf6 c4 e6 Nc3 Bb4":"Nimzo-Indian Defense",
+  "d4 Nf6 c4 e6 Nf3 b6":"Queen's Indian Defense",
+  "d4 Nf6 c4 g6":"King's Indian / Grünfeld setup",
+  "d4 Nf6 c4 g6 Nc3 Bg7":"King's Indian Defense",
+  "d4 Nf6 c4 g6 Nc3 d5":"Grünfeld Defense",
+  "d4 Nf6 c4 c5":"Benoni Defense",
+  "d4 f5":"Dutch Defense",
+  "d4 d5 c4 e6 Nc3 Nf6":"Queen's Gambit Declined",
+  "c4":"English Opening",
+  "Nf3":"Réti Opening",
+  "Nf3 d5 c4":"Réti Opening",
+  "b3":"Nimzo-Larsen Attack",
+  "b4":"Sokolsky (Orangutan)",
+  "g3":"King's Fianchetto Opening",
+  "f4":"Bird's Opening",
+  "Nc3":"Dunst Opening"
+};
+let OPENING_MAXLEN = 0;
+for(const k in OPENINGS){ const n=k.split(" ").length; if(n>OPENING_MAXLEN) OPENING_MAXLEN=n; }
+function detectOpening(uptoPly){
+  const sans=game.history().slice(0, uptoPly===undefined?undefined:uptoPly);
+  let best=null;
+  for(let i=Math.min(sans.length,OPENING_MAXLEN); i>=1; i--){
+    const key=sans.slice(0,i).join(" ");
+    if(OPENINGS[key]){ best=OPENINGS[key]; break; }
+  }
+  return best;
+}
+function updateOpening(){
+  const name=detectOpening(viewPly>0?viewPly:undefined);
+  $("opening").textContent = name ? ("Opening: "+name) : "";
+}
+function movetext(){
+  const h=game.history(); let s="";
+  for(let i=0;i<h.length;i++){ if(i%2===0) s+=(i/2+1)+". "; s+=h[i]+" "; }
+  return s.trim();
+}
 
 /* ============================================================
    Board rendering
@@ -348,7 +441,37 @@ function renderBoard(){
   });
   renderMoves();
   renderStatus();
+  updateOpening();
   renderMoveComment();
+}
+
+/* ============================================================
+   Slide animation — a floating piece glides from -> to
+   ============================================================ */
+function animateMove(from, to, glyph, color, cb){
+  const wrap=$("boardWrap");
+  const fromEl=document.querySelector('#board .sq[data-sq="'+from+'"]');
+  const toEl=document.querySelector('#board .sq[data-sq="'+to+'"]');
+  const orig=fromEl && fromEl.querySelector(".piece");
+  if(!fromEl||!toEl||!orig){ cb(); return; }
+  animating=true;
+  const wrapR=wrap.getBoundingClientRect();
+  const fr=fromEl.getBoundingClientRect(), tr=toEl.getBoundingClientRect();
+  const fl=document.createElement("span");
+  fl.className="piece "+color+" floatpiece";
+  fl.textContent=glyph;
+  fl.style.left=(fr.left-wrapR.left)+"px";
+  fl.style.top=(fr.top-wrapR.top)+"px";
+  fl.style.width=fr.width+"px"; fl.style.height=fr.height+"px";
+  fl.style.fontSize=(fr.width*0.80)+"px";
+  wrap.appendChild(fl);
+  orig.style.visibility="hidden";
+  const dx=tr.left-fr.left, dy=tr.top-fr.top;
+  requestAnimationFrame(()=>{ fl.style.transform="translate("+dx+"px,"+dy+"px)"; });
+  let done=false;
+  const finish=()=>{ if(done) return; done=true; fl.remove(); animating=false; cb(); };
+  fl.addEventListener("transitionend", finish);
+  setTimeout(finish, 460); // safety net
 }
 
 /* ============================================================
@@ -357,7 +480,7 @@ function renderBoard(){
 function atLivePosition(){ return viewPly===game.history().length; }
 
 function onSquareClick(sq){
-  if(pendingPromo) return;
+  if(pendingPromo || animating) return;
   if(!atLivePosition()){ // browsing history: clicking returns to live
     viewPly = game.history().length; selected=null; legalTargets=[]; renderBoard(); return;
   }
@@ -406,14 +529,18 @@ function showPromoPicker(toSq){
   promo.classList.add("on");
 }
 function makeHumanMove(mv){
+  const moving=game.get(mv.from);
   const made=game.move(mv);
   if(!made) return;
   selected=null; legalTargets=[];
   invalidateAnalysis();
-  viewPly=game.history().length;
-  playSound();
-  renderBoard();
-  maybeEngineMove();
+  const glyph=GLYPH[made.promotion || moving.type];
+  animateMove(made.from, made.to, glyph, made.color, ()=>{
+    viewPly=game.history().length;
+    playSound();
+    renderBoard();
+    maybeEngineMove();
+  });
 }
 
 /* ============================================================
@@ -431,10 +558,17 @@ async function maybeEngineMove(){
   engineThinking=false; $("thinking").classList.remove("on");
   if(!gameActive) return; // resigned / new game while thinking
   if(res.best && res.best!=="(none)"){
-    game.move({from:res.best.slice(0,2), to:res.best.slice(2,4), promotion:res.best[4]||"q"});
-    viewPly=game.history().length;
-    playSound();
-    renderBoard();
+    const fromSq=res.best.slice(0,2), toSq=res.best.slice(2,4);
+    const moving=game.get(fromSq);
+    const made=game.move({from:fromSq, to:toSq, promotion:res.best[4]||"q"});
+    const glyph=GLYPH[(made&&made.promotion) || (moving&&moving.type) || "p"];
+    animateMove(made.from, made.to, glyph, made.color, ()=>{
+      viewPly=game.history().length;
+      playSound();
+      renderBoard();
+      checkGameEnd();
+    });
+    return;
   }
   checkGameEnd();
 }
@@ -554,6 +688,15 @@ $("pgnBtn").addEventListener("click",()=>{
   navigator.clipboard.writeText(pgn).then(
     ()=>{ $("pgnBtn").textContent="Copied!"; setTimeout(()=>$("pgnBtn").textContent="Copy PGN",1200); },
     ()=>{ prompt("Copy your PGN:", pgn); }
+  );
+});
+
+$("movesBtn").addEventListener("click",()=>{
+  const txt=movetext();
+  if(!txt){ return; }
+  navigator.clipboard.writeText(txt).then(
+    ()=>{ $("movesBtn").textContent="Copied!"; setTimeout(()=>$("movesBtn").textContent="Copy moves",1200); },
+    ()=>{ prompt("Copy your moves:", txt); }
   );
 });
 
