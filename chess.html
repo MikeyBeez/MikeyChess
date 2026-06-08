@@ -41,7 +41,11 @@
   .sq .coord{position:absolute; font-size:2cqw; font-weight:700; pointer-events:none}
   .sq .coord.file{right:4%; bottom:2%} .sq .coord.rank{left:5%; top:3%}
   .sq.light .coord{color:var(--dark)} .sq.dark .coord{color:var(--light)}
-  .piece{font-size:10.5cqw; line-height:1; pointer-events:none; transform:translateY(-3%)}
+  .piece{font-size:10.5cqw; line-height:1; pointer-events:none; transform:translateY(-3%);
+    user-select:none; -webkit-user-drag:none}
+  #board{touch-action:none}
+  .sq{cursor:grab}
+  .floatpiece.dragging{transition:none; z-index:9; cursor:grabbing}
   .piece.w{color:#fff; text-shadow:0 0 2px #000, 0 1px 2px rgba(0,0,0,.7)}
   .piece.b{color:#1a1a1a; text-shadow:0 0 2px rgba(255,255,255,.25)}
   /* sliding piece during a move */
@@ -299,6 +303,9 @@ let pendingPromo = null;             // {from,to}
 let analysis = null;                 // {evals[], best[], judgments[], depth}
 let analyzing = false;
 let animating = false;               // a piece is currently sliding
+let drag = null;                     // active drag {el, from, wr, half}
+let dragPd = null;                   // pending pointer-down {from, x, y, started}
+let suppressClick = false;           // ignore the click that follows a drag
 
 /* ---- opening book: SAN prefix -> name (longest match wins) ---- */
 const OPENINGS = {
@@ -480,6 +487,7 @@ function animateMove(from, to, glyph, color, cb){
 function atLivePosition(){ return viewPly===game.history().length; }
 
 function onSquareClick(sq){
+  if(suppressClick){ suppressClick=false; return; }
   if(pendingPromo || animating) return;
   if(!atLivePosition()){ // browsing history: clicking returns to live
     viewPly = game.history().length; selected=null; legalTargets=[]; renderBoard(); return;
@@ -490,7 +498,7 @@ function onSquareClick(sq){
     if(legalTargets.includes(sq)){
       const moves = game.moves({square:selected, verbose:true}).filter(m=>m.to===sq);
       if(moves.some(m=>m.promotion)){
-        pendingPromo={from:selected,to:sq};
+        pendingPromo={from:selected,to:sq,animate:true};
         showPromoPicker(sq);
         return;
       }
@@ -517,7 +525,7 @@ function showPromoPicker(toSq){
     d.addEventListener("click", ()=>{
       promo.classList.remove("on");
       const mv=pendingPromo; pendingPromo=null;
-      makeHumanMove({from:mv.from,to:mv.to,promotion:p});
+      commitHumanMove({from:mv.from,to:mv.to,promotion:p}, mv.animate!==false);
     });
     promo.appendChild(d);
   }
@@ -528,20 +536,109 @@ function showPromoPicker(toSq){
   promo.style.top=(r.top-wrap.top)+"px";
   promo.classList.add("on");
 }
-function makeHumanMove(mv){
+function commitHumanMove(mv, animate){
   const moving=game.get(mv.from);
   const made=game.move(mv);
-  if(!made) return;
+  if(!made) return false;
   selected=null; legalTargets=[];
   invalidateAnalysis();
-  const glyph=GLYPH[made.promotion || moving.type];
-  animateMove(made.from, made.to, glyph, made.color, ()=>{
+  const after=()=>{
     viewPly=game.history().length;
     playSound();
     renderBoard();
     maybeEngineMove();
-  });
+  };
+  if(animate){
+    const glyph=GLYPH[made.promotion || moving.type];
+    animateMove(made.from, made.to, glyph, made.color, after);
+  } else {
+    after();
+  }
+  return true;
 }
+function makeHumanMove(mv){ return commitHumanMove(mv, true); }
+
+/* ---- drag and drop (pointer events; coexists with click-to-move) ---- */
+function canDragNow(){
+  return gameActive && !engineThinking && !animating && !pendingPromo
+    && game.turn()===humanColor && atLivePosition();
+}
+function startDrag(sq, e){
+  selected=sq;
+  legalTargets=game.moves({square:sq, verbose:true}).map(m=>m.to);
+  renderBoard();
+  const sqEl=document.querySelector('#board .sq[data-sq="'+sq+'"]');
+  const orig=sqEl.querySelector(".piece");
+  const piece=game.get(sq);
+  const r=sqEl.getBoundingClientRect();
+  const wrap=$("boardWrap"), wr=wrap.getBoundingClientRect();
+  const fl=document.createElement("span");
+  fl.className="piece "+piece.color+" floatpiece dragging";
+  fl.textContent=GLYPH[piece.type];
+  fl.style.width=r.width+"px"; fl.style.height=r.height+"px";
+  fl.style.fontSize=(r.width*0.80)+"px";
+  wrap.appendChild(fl);
+  if(orig) orig.style.visibility="hidden";
+  drag={el:fl, from:sq, wr, half:r.width/2};
+  moveDragTo(e.clientX, e.clientY);
+}
+function moveDragTo(cx, cy){
+  if(!drag) return;
+  drag.el.style.left=(cx-drag.wr.left-drag.half)+"px";
+  drag.el.style.top =(cy-drag.wr.top -drag.half)+"px";
+}
+function endDrag(x, y, from){
+  if(drag){ drag.el.remove(); drag=null; }
+  const el=document.elementFromPoint(x, y);
+  const sqEl=el && el.closest && el.closest('#board .sq');
+  if(sqEl){
+    const to=sqEl.dataset.sq;
+    const moves=game.moves({square:from, verbose:true}).filter(m=>m.to===to);
+    if(moves.length){
+      if(moves.some(m=>m.promotion)){ pendingPromo={from,to,animate:false}; showPromoPicker(to); return; }
+      commitHumanMove({from,to}, false); return;
+    }
+  }
+  selected=null; legalTargets=[]; renderBoard();   // illegal drop: snap back
+}
+function onPointerDown(e){
+  suppressClick=false;
+  if(e.button && e.button!==0) return;
+  if(!canDragNow()) return;
+  const sqEl=e.target.closest && e.target.closest('#board .sq');
+  if(!sqEl) return;
+  const sq=sqEl.dataset.sq, piece=game.get(sq);
+  if(!piece || piece.color!==humanColor) return;
+  dragPd={from:sq, x:e.clientX, y:e.clientY, started:false};
+}
+function onPointerMove(e){
+  if(!dragPd) return;
+  if(!dragPd.started){
+    if(Math.hypot(e.clientX-dragPd.x, e.clientY-dragPd.y) < 4) return;
+    dragPd.started=true;
+    startDrag(dragPd.from, e);
+  } else {
+    moveDragTo(e.clientX, e.clientY);
+    e.preventDefault();
+  }
+}
+function onPointerUp(e){
+  if(!dragPd) return;
+  const started=dragPd.started, from=dragPd.from;
+  dragPd=null;
+  if(!started) return;               // it was a tap/click — let onSquareClick handle it
+  suppressClick=true;
+  endDrag(e.clientX, e.clientY, from);
+}
+function onPointerCancel(){
+  if(drag){ drag.el.remove(); drag=null; }
+  dragPd=null;
+  selected=null; legalTargets=[]; renderBoard();
+}
+$("board").addEventListener("pointerdown", onPointerDown);
+document.addEventListener("pointermove", onPointerMove, {passive:false});
+document.addEventListener("pointerup", onPointerUp);
+document.addEventListener("pointercancel", onPointerCancel);
 
 /* ============================================================
    Engine play
@@ -804,6 +901,26 @@ function resetAnalysisUI(){
   $("anaBarFill").style.width="0%";
   $("analyzeBtn").disabled = game.history().length===0 || gameActive;
 }
+/* lichess-style accuracy: based on win-probability swing, not centipawns */
+function winPct(cp){ return 100/(1+Math.exp(-0.00368208*cp)); }
+function moveAccuracy(winBefore, winAfter){
+  const drop=Math.max(0, winBefore-winAfter);
+  const a=103.1668*Math.exp(-0.04354*drop)-3.1669;
+  return Math.max(0, Math.min(100, a));
+}
+function sideAccuracy(color){
+  if(!analysis) return null;
+  const accs=[];
+  for(let i=0;i<analysis.evals.length-1;i++){
+    const mover = i%2===0 ? "w" : "b";
+    if(mover!==color) continue;
+    const cpB = mover==="w" ? analysis.evals[i]   : -analysis.evals[i];
+    const cpA = mover==="w" ? analysis.evals[i+1] : -analysis.evals[i+1];
+    accs.push(moveAccuracy(winPct(cpB), winPct(cpA)));
+  }
+  if(!accs.length) return null;
+  return Math.round(accs.reduce((a,b)=>a+b,0)/accs.length);
+}
 function renderAnalysis(){
   if(!analysis) return;
   const counts=c=>{
@@ -815,12 +932,13 @@ function renderAnalysis(){
     };
   };
   const w=counts("w"), b=counts("b");
+  const accW=sideAccuracy("w"), accB=sideAccuracy("b");
   const wName = humanColor==="w"?"Mikey":"Stockfish", bName = humanColor==="b"?"Mikey":"Stockfish";
   $("anaSummary").innerHTML =
-    "<table><tr><th></th><th>Inaccuracies</th><th>Mistakes</th><th>Blunders</th><th>ACPL</th></tr>"+
-    "<tr><td>⬜ "+wName+"</td><td><span class='nag inacc'>"+w.inacc+"</span></td><td><span class='nag mist'>"+w.mist+"</span></td><td><span class='nag blun'>"+w.blun+"</span></td><td>"+analysis.acpl.w+"</td></tr>"+
-    "<tr><td>⬛ "+bName+"</td><td><span class='nag inacc'>"+b.inacc+"</span></td><td><span class='nag mist'>"+b.mist+"</span></td><td><span class='nag blun'>"+b.blun+"</span></td><td>"+analysis.acpl.b+"</td></tr></table>"+
-    "<div class='hint'>Depth "+analysis.depth+" · click the graph or moves to review · ?! ≥0.5 · ? ≥1.0 · ?? ≥3.0 pawns lost</div>";
+    "<table><tr><th></th><th>Accuracy</th><th>Inacc.</th><th>Mistakes</th><th>Blunders</th><th>ACPL</th></tr>"+
+    "<tr><td>⬜ "+wName+"</td><td><b>"+(accW==null?"–":accW+"%")+"</b></td><td><span class='nag inacc'>"+w.inacc+"</span></td><td><span class='nag mist'>"+w.mist+"</span></td><td><span class='nag blun'>"+w.blun+"</span></td><td>"+analysis.acpl.w+"</td></tr>"+
+    "<tr><td>⬛ "+bName+"</td><td><b>"+(accB==null?"–":accB+"%")+"</b></td><td><span class='nag inacc'>"+b.inacc+"</span></td><td><span class='nag mist'>"+b.mist+"</span></td><td><span class='nag blun'>"+b.blun+"</span></td><td>"+analysis.acpl.b+"</td></tr></table>"+
+    "<div class='hint'>Accuracy is win-probability based (like lichess). ACPL = avg centipawn loss. Depth "+analysis.depth+" · ?! ≥0.5 · ? ≥1.0 · ?? ≥3.0 pawns lost · click graph/moves to review</div>";
   $("anaSummary").classList.add("on");
   $("evalGraph").classList.add("on");
   drawGraph();
