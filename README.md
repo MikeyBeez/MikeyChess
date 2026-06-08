@@ -22,6 +22,9 @@ are embedded directly inside the file.
 - **Click or drag** — move pieces by clicking (with legal-move dots) or by
   dragging them to the target square. Last-move and check highlighting, pawn
   promotion picker, board flip.
+- **Appearance** — choose from 8 board color themes and 5 piece styles (three
+  embedded vector sets plus unicode symbols and letters). Your choice is
+  remembered between sessions.
 - **Game management** — play as White, Black, or random; takeback; resign; copy
   the move list or the full PGN to your clipboard.
 - **Opening detection** — the opening name (Ruy López, Sicilian Najdorf, etc.)
@@ -70,3 +73,7 @@ its corresponding source. The complete engine source as distributed here is in
 The original application code in this repository (everything other than the
 bundled libraries) is additionally made available by the author under the
 **MIT License** — see [LICENSE](LICENSE). chess.js is under the BSD license.
+
+The bundled piece sets (Cburnett, Merida, Alpha) come from the
+[lichess](https://github.com/lichess-org/lila) project and are used under their
+respective free licenses; see lichess's COPYING for details.
