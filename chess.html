@@ -60,6 +60,29 @@
     color:#9bc700; display:none; padding:2px 8px}
   #thinking.on{display:block}
 
+  /* ---------------- evaluation bar ---------------- */
+  #boardArea{display:flex; gap:10px; align-items:flex-start}
+  #evalBar{position:relative; width:22px; flex:0 0 22px; background:#3a3835;
+    border-radius:3px; overflow:hidden; height:min(80vw, 78vh, 560px)}
+  #evalBarFill{position:absolute; left:0; right:0; bottom:0; height:50%; background:#f2f2f2;
+    transition:height .35s ease, top .35s ease, bottom .35s ease}
+  #evalBarText{position:absolute; left:0; right:0; bottom:3px; text-align:center; font-size:10px;
+    font-weight:700; letter-spacing:.02em; pointer-events:none}
+
+  /* ---------------- opening book ---------------- */
+  #bookName{font-size:13px; color:var(--bright); margin-bottom:6px; min-height:17px}
+  #bookMoves{display:flex; flex-direction:column; gap:2px}
+  .bookrow{display:flex; align-items:center; gap:8px; padding:3px 6px; border-radius:3px; font-size:13px}
+  .bookrow.playable{cursor:pointer}
+  .bookrow.playable:hover{background:var(--panel2)}
+  .bookrow .bsan{min-width:48px; font-weight:600; color:var(--bright)}
+  .bookrow .bcount{margin-left:auto; font-size:11px; opacity:.6; white-space:nowrap}
+  .wdl{display:inline-flex; flex:1; height:9px; min-width:54px; border-radius:2px; overflow:hidden; background:#555}
+  .wdl i{display:block; height:100%; background:#e8e6e3}
+  .wdl i.d{background:#8a8782}
+  .wdl i.bl{background:#403e3c}
+  h2 .mini{font-size:11px; padding:1px 7px; margin-left:6px; text-transform:none; letter-spacing:0}
+
   /* ---------------- side panel ---------------- */
   #side{width:min(94vw,420px); display:flex; flex-direction:column; gap:12px}
   .card{background:var(--panel); border-radius:6px; padding:12px}
@@ -128,10 +151,16 @@
 </header>
 
 <main>
-  <div id="boardWrap">
-    <div id="thinking">Stockfish is thinking…</div>
-    <div id="board"></div>
-    <div id="promo"></div>
+  <div id="boardArea">
+    <div id="evalBar" title="Engine evaluation — white vs black">
+      <div id="evalBarFill"></div>
+      <div id="evalBarText">0.0</div>
+    </div>
+    <div id="boardWrap">
+      <div id="thinking">Stockfish is thinking…</div>
+      <div id="board"></div>
+      <div id="promo"></div>
+    </div>
   </div>
 
   <div id="side">
@@ -143,9 +172,9 @@
       <div class="hint" id="lvlHint"></div>
       <div class="row" style="margin-top:8px"><label>Play as</label>
         <select id="colorSel">
+          <option value="r" selected>Random</option>
           <option value="w">White</option>
           <option value="b">Black</option>
-          <option value="r">Random</option>
         </select>
         <button class="primary" id="newGameBtn">Start game</button>
       </div>
@@ -171,9 +200,17 @@
         <button id="takebackBtn">Takeback</button>
         <button id="resignBtn">Resign</button>
         <button id="flipBtn">Flip board</button>
+        <button id="evalToggleBtn">Eval bar: on</button>
         <button id="movesBtn">Copy moves</button>
         <button id="pgnBtn">Copy PGN</button>
       </div>
+    </div>
+
+    <div class="card" id="bookCard">
+      <h2>Opening book <button id="bookToggleBtn" class="mini">on</button></h2>
+      <div id="bookName">—</div>
+      <div id="bookMoves"></div>
+      <div id="bookHint" class="hint"></div>
     </div>
 
     <div class="card">
@@ -244,8 +281,12 @@ class Engine {
   setSkill(n){ this.send("setoption name Skill Level value "+n); }
   /* run a search; returns {best, ponder, cp, mate} — score is from the
      side to move's point of view, as UCI specifies */
-  go(fen, goCmd){
-    return new Promise(res=>{
+  go(fen, goCmd, skill){
+    // Serialize every search through one chain so the shared worker never has
+    // two 'go' commands in flight (eval bar + opponent + analysis can overlap).
+    // 'skill' (optional) is set inside the chain so each search runs at its own
+    // Skill Level even when full-strength eval probes interleave with play.
+    const run=()=>new Promise(res=>{
       let cp=null, mate=null;
       const h=line=>{
         if(line.indexOf("info")===0){
@@ -258,9 +299,47 @@ class Engine {
         }
       };
       this.on(h);
+      if(skill!==undefined) this.send("setoption name Skill Level value "+skill);
       this.send("position fen "+fen);
       this.send(goCmd);
     });
+    const prev=this._chain || Promise.resolve();
+    this._chain=prev.then(run, run);
+    return this._chain;
+  }
+  /* MultiPV search: returns [{move,cp,mate}] ordered best-first (multipv 1..N),
+     used to give the engine a choice of sound opening moves. Runs at full
+     strength for a clean candidate ranking, then restores MultiPV to 1 so the
+     eval bar and analysis (both single-PV) are unaffected. */
+  goRoots(fen, goCmd, multipv){
+    const run=()=>new Promise(res=>{
+      const roots=new Map();               // multipv index -> {move, cp, mate}
+      const h=line=>{
+        if(line.indexOf("info")===0 && line.indexOf(" pv ")>=0){
+          const mi=line.match(/multipv (\d+)/);
+          const pv=line.match(/ pv (\S+)/);
+          const sc=line.match(/score (cp|mate) (-?\d+)/);
+          if(mi && pv){
+            const cur={move:pv[1], cp:null, mate:null};
+            if(sc){ if(sc[1]==="cp") cur.cp=+sc[2]; else cur.mate=+sc[2]; }
+            roots.set(+mi[1], cur);        // last line per index (deepest) wins
+          }
+        }else if(line.indexOf("bestmove")===0){
+          this.off(h);
+          res([...roots.entries()].sort((a,b)=>a[0]-b[0]).map(e=>e[1]));
+        }
+      };
+      this.on(h);
+      this.send("setoption name Skill Level value 20");
+      this.send("setoption name MultiPV value "+multipv);
+      this.send("position fen "+fen);
+      this.send(goCmd);
+    });
+    const reset=arr=>{ this.send("setoption name MultiPV value 1"); return arr; };
+    const wrapped=()=>run().then(reset, err=>{ reset(); throw err; });
+    const prev=this._chain || Promise.resolve();
+    this._chain=prev.then(wrapped, wrapped);
+    return this._chain;
   }
 }
 
@@ -268,14 +347,18 @@ class Engine {
    Level definitions — modeled on lichess's Stockfish levels
    ============================================================ */
 const LEVELS = {
-  1:{skill:0,  depth:1,  time:50,   elo:"~800"},
-  2:{skill:3,  depth:2,  time:100,  elo:"~1000"},
-  3:{skill:6,  depth:3,  time:150,  elo:"~1200"},
-  4:{skill:9,  depth:5,  time:200,  elo:"~1400"},
-  5:{skill:12, depth:7,  time:300,  elo:"~1600"},
-  6:{skill:15, depth:9,  time:400,  elo:"~1850"},
-  7:{skill:18, depth:13, time:600,  elo:"~2100"},
-  8:{skill:20, depth:20, time:1200, elo:"~2400+"}
+  // App level = Stockfish Skill Level. Elo labels are Stockfish's own values,
+  // from inverting the UCI_Elo<->Skill cubic in search.h (CCRL-blitz anchored,
+  // floor = skill 0 ~1347). No artificial depth/time caps: the skill mechanism
+  // governs strength on its own.
+  1:{skill:1, elo:"~1444"},
+  2:{skill:2, elo:"~1566"},
+  3:{skill:3, elo:"~1729"},
+  4:{skill:4, elo:"~1953"},
+  5:{skill:5, elo:"~2197"},
+  6:{skill:6, elo:"~2383"},
+  7:{skill:7, elo:"~2518"},
+  8:{skill:8, elo:"~2624"}
 };
 
 /* ============================================================
@@ -513,6 +596,8 @@ function renderBoard(){
   renderStatus();
   updateOpening();
   renderMoveComment();
+  refreshEval();
+  refreshBook();
 }
 
 /* ============================================================
@@ -705,21 +790,69 @@ document.addEventListener("pointercancel", onPointerCancel);
 /* ============================================================
    Engine play
    ============================================================ */
+/* ---- opening variety ----------------------------------------------------
+   Stockfish's skill-level move choice is nearly deterministic from the start
+   position, so every game tended to open the same way. For the first few moves
+   we run a MultiPV search and pick a *weighted-random* move among the engine's
+   top, still-sound candidates. Lower levels roam a wider window (more variety,
+   the occasional slightly worse move); higher levels stay closer to best. */
+const OPENING_PLIES   = 12;  // apply variety for ~first 6 moves per side
+const OPENING_MULTIPV = 4;   // how many candidate moves to consider
+const OPENING_DEPTH   = 10;  // search depth used to rank the candidates
+
+function pickWeighted(items, weights){
+  let total=0; for(const w of weights) total+=w;
+  let r=Math.random()*total;
+  for(let i=0;i<items.length;i++){ r-=weights[i]; if(r<=0) return items[i]; }
+  return items[items.length-1];
+}
+
+// Returns a uci move chosen with opening variety, or null to fall back to the
+// normal (level-strength) search.
+async function engineOpeningMove(){
+  if(game.history().length >= OPENING_PLIES) return null;
+  let roots;
+  try{ roots = await engine.goRoots(game.fen(), "go depth "+OPENING_DEPTH, OPENING_MULTIPV); }
+  catch(e){ return null; }
+  roots = (roots||[]).filter(r=>r && r.move && r.move!=="(none)");
+  if(roots.length < 2) return null;
+  // value of each candidate from the side-to-move's point of view (centipawns)
+  const val = r => r.mate!=null ? (r.mate>0 ? 1e5 - r.mate : -1e5 - r.mate)
+                                : (r.cp!=null ? r.cp : -1e5);
+  const best = Math.max(...roots.map(val));
+  const skill = LEVELS[level].skill;
+  const window = 40 + (9 - skill) * 12;   // skill 8 -> 52cp, skill 1 -> 136cp
+  const temp   = 30 + (9 - skill) * 10;   // softmax temperature (cp)
+  const kept = roots.filter(r => best - val(r) <= window);
+  if(kept.length < 2) return null;        // one clearly-best move: don't randomize
+  const weights = kept.map(r => Math.exp(-(best - val(r)) / temp));
+  return pickWeighted(kept, weights).move;
+}
+
 async function maybeEngineMove(){
   if(!gameActive || !engineOk) { checkGameEnd(); return; }
   if(game.game_over()){ checkGameEnd(); return; }
   if(game.turn()===humanColor) return;
   engineThinking=true; $("thinking").classList.add("on");
   const cfg=LEVELS[level];
-  engine.setSkill(cfg.skill);
   await engine.ready();
-  const res=await engine.go(game.fen(), "go depth "+cfg.depth+" movetime "+cfg.time);
+  // Try opening variety first; if it declines (past the opening, or one clearly
+  // best move) fall back to the normal search. Stockfish picks its deliberately-
+  // weakened move at depth = 1 + Skill Level, so searching to exactly that depth
+  // matches the strength its Elo calibration assumes. Skill is passed into the
+  // serialized search so the eval bar's full-strength probes can't leave the
+  // opponent playing at the wrong level.
+  let bestUci = await engineOpeningMove();
+  if(!bestUci){
+    const res=await engine.go(game.fen(), "go depth "+(cfg.skill+1), cfg.skill);
+    bestUci = res.best;
+  }
   engineThinking=false; $("thinking").classList.remove("on");
   if(!gameActive) return; // resigned / new game while thinking
-  if(res.best && res.best!=="(none)"){
-    const fromSq=res.best.slice(0,2), toSq=res.best.slice(2,4);
+  if(bestUci && bestUci!=="(none)"){
+    const fromSq=bestUci.slice(0,2), toSq=bestUci.slice(2,4);
     const moving=game.get(fromSq);
-    const made=game.move({from:fromSq, to:toSq, promotion:res.best[4]||"q"});
+    const made=game.move({from:fromSq, to:toSq, promotion:bestUci[4]||"q"});
     animateMove(made.from, made.to, {color:made.color, type:(made&&made.promotion) || (moving&&moving.type) || "p"}, ()=>{
       viewPly=game.history().length;
       playSound();
@@ -783,7 +916,12 @@ function renderMoves(){
       box.appendChild(cell);
     }
   }
-  const cur=box.querySelector(".cur"); if(cur) cur.scrollIntoView({block:"nearest"});
+  const cur=box.querySelector(".cur");
+  if(cur){ // scroll only within the moves box, never the page
+    const cr=cur.getBoundingClientRect(), br=box.getBoundingClientRect();
+    if(cr.top < br.top) box.scrollTop -= (br.top - cr.top);
+    else if(cr.bottom > br.bottom) box.scrollTop += (cr.bottom - br.bottom);
+  }
 }
 function nav(delta){
   const max=game.history().length;
@@ -812,11 +950,12 @@ function startGame(){
   invalidateAnalysis();
   gameActive=true;
   $("analyzeBtn").disabled=true;
+  evalBarFen=null; bookFen=null;
   buildBoard(); renderBoard();
   maybeEngineMove();
 }
 $("newGameBtn").addEventListener("click",startGame);
-$("flipBtn").addEventListener("click",()=>{ orientation = orientation==="w"?"b":"w"; buildBoard(); renderBoard(); });
+$("flipBtn").addEventListener("click",()=>{ orientation = orientation==="w"?"b":"w"; evalBarFen=null; buildBoard(); renderBoard(); });
 $("resignBtn").addEventListener("click",()=>{
   if(!gameActive) return;
   gameActive=false; engine.stop();
@@ -871,7 +1010,7 @@ function buildLevelButtons(){
     });
     wrap.appendChild(b);
   }
-  $("lvlHint").textContent="Level "+level+" ≈ "+LEVELS[level].elo+" Elo (skill "+LEVELS[level].skill+", depth "+LEVELS[level].depth+")";
+  $("lvlHint").textContent="Stockfish Level "+level+" ≈ "+LEVELS[level].elo+" Elo";
 }
 
 /* ============================================================
@@ -918,7 +1057,7 @@ async function analyzeGame(){
       evals.push(t.in_checkmate() ? (turns[i]==="w"?-MATE_CP:MATE_CP) : 0);
       bests.push(null);
     }else{
-      const res=await engine.go(fens[i], "go depth "+depth);
+      const res=await engine.go(fens[i], "go depth "+depth, 20);
       evals.push(scoreToWhiteCp(res, turns[i]));
       bests.push(res.best && res.best!=="(none)" ? res.best : null);
     }
@@ -1075,6 +1214,229 @@ function playSound(){
 }
 
 /* ============================================================
+   Evaluation bar (live + review, toggleable)
+   ============================================================ */
+const EVAL_DEPTH = 12;
+let evalBarOn = true;
+let evalBarFen = null;            // fen the bar currently reflects
+let evalActive = false, evalWant = null;
+
+function displayFen(){ return fenAtPly(viewPly).fen(); }
+
+function setEvalBar(wcp, wmate){
+  const fill=$("evalBarFill"), txt=$("evalBarText");
+  const pct = (wmate!=null) ? (wmate>0?100:0) : Math.max(2, Math.min(98, winPct(wcp)));
+  const whiteBottom = (orientation==="w");
+  fill.style.height = pct+"%";
+  fill.style.top    = whiteBottom ? "auto" : "0";
+  fill.style.bottom = whiteBottom ? "0" : "auto";
+  let show;
+  if(wmate!=null) show=(wmate>0?"M":"-M")+Math.abs(wmate);
+  else { const p=wcp/100; show=(p>=0?"+":"")+p.toFixed(1); }
+  txt.textContent=show;
+  const whiteLeads = pct>=50;
+  txt.style.color = whiteLeads ? "#2b2b2b" : "#ededed";
+  const atBottom = whiteBottom ? whiteLeads : !whiteLeads;
+  txt.style.bottom = atBottom ? "3px" : "auto";
+  txt.style.top    = atBottom ? "auto" : "3px";
+}
+
+function setEvalTerminal(pos){
+  const fill=$("evalBarFill"), txt=$("evalBarText");
+  const whiteBottom=(orientation==="w");
+  let pct=50, show="½";
+  if(pos.in_checkmate()){ const whiteWins=pos.turn()==="b"; pct=whiteWins?100:0; show=whiteWins?"1-0":"0-1"; }
+  fill.style.height=pct+"%";
+  fill.style.top=whiteBottom?"auto":"0"; fill.style.bottom=whiteBottom?"0":"auto";
+  txt.textContent=show; txt.style.color="#9bc700";
+  txt.style.bottom="3px"; txt.style.top="auto";
+}
+
+async function refreshEval(){
+  if(!evalBarOn || !engineOk || analyzing) return;
+  const fen = displayFen();
+  if(fen===evalBarFen) return;
+  const pos = fenAtPly(viewPly);
+  if(pos.game_over()){ evalBarFen=fen; setEvalTerminal(pos); return; }
+  evalWant = fen;
+  if(evalActive) return;
+  evalActive = true;
+  try{
+    while(evalWant){
+      const f = evalWant; evalWant = null;
+      const turn = f.split(" ")[1];
+      let res;
+      try{ res = await engine.go(f, "go depth "+EVAL_DEPTH, 20); }   // full-strength probe
+      catch(e){ break; }
+      if(displayFen()!==f) continue;          // position moved on; stale result
+      const wcp = scoreToWhiteCp({cp:res.cp, mate:res.mate}, turn);
+      const wmate = (res.mate!==null && res.mate!==undefined && res.cp===null)
+                    ? (turn==="w" ? res.mate : -res.mate) : null;
+      evalBarFen = f;
+      setEvalBar(wcp, wmate);
+    }
+  } finally { evalActive=false; }
+}
+
+function applyEvalBarVisibility(){
+  $("evalBar").style.display = evalBarOn ? "" : "none";
+  $("evalToggleBtn").textContent = "Eval bar: " + (evalBarOn ? "on" : "off");
+  if(evalBarOn){ evalBarFen=null; refreshEval(); }
+}
+
+/* ============================================================
+   Opening book (Lichess explorer, offline fallback)
+   ============================================================ */
+let bookOn = true;
+let bookFen = null;
+let bookSeq = 0;
+const bookCache = new Map();
+
+const BOOK_LINES = [
+  {n:"Ruy Lopez", m:["e4","e5","Nf3","Nc6","Bb5"]},
+  {n:"Italian Game", m:["e4","e5","Nf3","Nc6","Bc4"]},
+  {n:"Scotch Game", m:["e4","e5","Nf3","Nc6","d4"]},
+  {n:"Petrov Defense", m:["e4","e5","Nf3","Nf6"]},
+  {n:"Philidor Defense", m:["e4","e5","Nf3","d6"]},
+  {n:"King's Gambit", m:["e4","e5","f4"]},
+  {n:"Vienna Game", m:["e4","e5","Nc3"]},
+  {n:"Sicilian Defense", m:["e4","c5"]},
+  {n:"Sicilian, Najdorf", m:["e4","c5","Nf3","d6","d4","cxd4","Nxd4","Nf6","Nc3","a6"]},
+  {n:"Sicilian, Dragon", m:["e4","c5","Nf3","d6","d4","cxd4","Nxd4","Nf6","Nc3","g6"]},
+  {n:"French Defense", m:["e4","e6"]},
+  {n:"Caro-Kann Defense", m:["e4","c6"]},
+  {n:"Scandinavian Defense", m:["e4","d5"]},
+  {n:"Pirc Defense", m:["e4","d6"]},
+  {n:"Alekhine Defense", m:["e4","Nf6"]},
+  {n:"Queen's Gambit", m:["d4","d5","c4"]},
+  {n:"Queen's Gambit Declined", m:["d4","d5","c4","e6"]},
+  {n:"Queen's Gambit Accepted", m:["d4","d5","c4","dxc4"]},
+  {n:"Slav Defense", m:["d4","d5","c4","c6"]},
+  {n:"London System", m:["d4","d5","Bf4"]},
+  {n:"King's Indian Defense", m:["d4","Nf6","c4","g6","Nc3","Bg7"]},
+  {n:"Nimzo-Indian Defense", m:["d4","Nf6","c4","e6","Nc3","Bb4"]},
+  {n:"Queen's Indian Defense", m:["d4","Nf6","c4","e6","Nf3","b6"]},
+  {n:"Grunfeld Defense", m:["d4","Nf6","c4","g6","Nc3","d5"]},
+  {n:"Catalan Opening", m:["d4","Nf6","c4","e6","g3"]},
+  {n:"Dutch Defense", m:["d4","f5"]},
+  {n:"English Opening", m:["c4"]},
+  {n:"Reti Opening", m:["Nf3","d5","c4"]},
+  {n:"King's Indian Attack", m:["Nf3","d5","g3"]}
+];
+
+function fmtCount(n){ return n>=1e6?(n/1e6).toFixed(1)+"M":n>=1e3?Math.round(n/1e3)+"k":""+n; }
+
+function offlineBook(){
+  const hist=game.history();
+  let name=null, best=-1;
+  const next=new Map();
+  for(const line of BOOK_LINES){
+    let i=0; while(i<hist.length && i<line.m.length && line.m[i]===hist[i]) i++;
+    if(i===hist.length && line.m.length>i){ const s=line.m[i]; if(!next.has(s)) next.set(s,s); }   // continuation
+    if(i===line.m.length && i===hist.length && i>best){ best=i; name=line.n; }                       // exactly on a named line
+  }
+  const moves=[...next.keys()].map(s=>({san:s, uci:null, total:null}));
+  return {source:"offline", opening: name?{eco:"",name:name}:null, moves:moves, total:null};
+}
+
+async function fetchBook(fen){
+  if(bookCache.has(fen)) return bookCache.get(fen);
+  const url="https://explorer.lichess.ovh/lichess?variant=standard&moves=10&topGames=0&recentGames=0&fen="+encodeURIComponent(fen);
+  try{
+    const ctrl=new AbortController();
+    const to=setTimeout(()=>ctrl.abort(), 4500);
+    const r=await fetch(url,{signal:ctrl.signal});
+    clearTimeout(to);
+    if(!r.ok) throw new Error("http "+r.status);
+    const j=await r.json();
+    const total=(j.white||0)+(j.draws||0)+(j.black||0);
+    const data={ source:"lichess", opening:j.opening||null, total:total,
+      moves:(j.moves||[]).map(m=>{ const t=(m.white||0)+(m.draws||0)+(m.black||0);
+        return {san:m.san, uci:m.uci, w:m.white||0, d:m.draws||0, b:m.black||0, total:t}; }) };
+    bookCache.set(fen, data);
+    return data;
+  }catch(e){
+    return offlineBook();             // not cached, so online is retried later
+  }
+}
+
+function wdlBar(m){
+  if(m.total==null || m.total===0) return "";
+  const w=Math.round(m.w/m.total*100), d=Math.round(m.d/m.total*100), b=Math.max(0,100-w-d);
+  return '<span class="wdl"><i style="width:'+w+'%"></i><i class="d" style="width:'+d+'%"></i><i class="bl" style="width:'+b+'%"></i></span>';
+}
+
+function bookTitle(data){
+  if(data && data.opening && data.opening.name)
+    return (data.opening.eco?data.opening.eco+" ":"")+data.opening.name;
+  return null;
+}
+
+function offlineReason(){
+  return location.protocol==="file:"
+    ? "Opening book is blocked on file:// — open the page via play-chess.command (serves it over http)."
+    : "Lichess explorer unreachable (offline?).";
+}
+function renderBook(data, fen){
+  const nameEl=$("bookName"), movesEl=$("bookMoves"), hintEl=$("bookHint");
+  const title=bookTitle(data);
+  if(title) $("opening").textContent="Opening: "+title;     // upgrade the quick name line
+  movesEl.innerHTML="";
+  nameEl.textContent = title || (data&&data.source==="offline"?"Book moves":"—");
+  if(!data || !data.moves || !data.moves.length){
+    hintEl.textContent = data&&data.source==="offline" ? offlineReason() : "Out of book.";
+    return;
+  }
+  const pos = fenAtPly(viewPly);
+  const live = (viewPly===game.history().length);
+  const humansTurn = live && gameActive && pos.turn()===humanColor && !engineThinking;
+  data.moves.slice(0,8).forEach(m=>{
+    let from=null,to=null,promo=null;
+    if(m.uci){ from=m.uci.slice(0,2); to=m.uci.slice(2,4); promo=m.uci[4]||null; }
+    else { const t=fenAtPly(viewPly); const mv=t.move(m.san); if(mv){ from=mv.from; to=mv.to; promo=mv.promotion||null; } }
+    const row=document.createElement("div");
+    row.className="bookrow"+(humansTurn&&from?" playable":"");
+    const share = (m.total!=null && data.total) ? " · "+Math.round(m.total/data.total*100)+"%" : "";
+    const cnt = m.total!=null ? fmtCount(m.total)+share : "";
+    row.innerHTML='<span class="bsan">'+m.san+'</span>'+wdlBar(m)+'<span class="bcount">'+cnt+'</span>';
+    if(humansTurn && from){
+      row.addEventListener("click",()=>{
+        if(viewPly!==game.history().length) return;
+        commitHumanMove(promo?{from:from,to:to,promotion:promo}:{from:from,to:to}, true);
+      });
+    }
+    movesEl.appendChild(row);
+  });
+  hintEl.textContent = data.source==="offline"
+                     ? (location.protocol==="file:" ? "Offline book — run play-chess.command for live Lichess stats." : "Offline book (no live stats).")
+                     : (humansTurn ? "Click a move to play it." : "");
+}
+
+async function refreshBook(){
+  if(!bookOn) return;
+  const fen=displayFen();
+  if(fen===bookFen) return;
+  bookFen=fen;
+  const seq=++bookSeq;
+  await new Promise(r=>setTimeout(r,180));      // debounce bursts of renders
+  if(seq!==bookSeq) return;
+  const data=await fetchBook(fen);
+  if(seq!==bookSeq) return;                       // a newer position superseded us
+  renderBook(data, fen);
+}
+
+function applyBookVisibility(){
+  $("bookCard").style.display = bookOn ? "" : "none";
+  $("bookToggleBtn").textContent = bookOn ? "on" : "off";
+  if(bookOn){ bookFen=null; refreshBook(); }
+}
+
+$("evalToggleBtn").addEventListener("click",()=>{ evalBarOn=!evalBarOn; applyEvalBarVisibility(); });
+$("bookToggleBtn").addEventListener("click",()=>{ bookOn=!bookOn; applyBookVisibility(); });
+applyEvalBarVisibility();
+applyBookVisibility();
+
+/* ============================================================
    Boot
    ============================================================ */
 applyTheme(currentTheme);
@@ -1087,6 +1449,7 @@ engine.init().then(()=>{
   engineOk=true;
   const es=$("engineStatus"); es.textContent="engine ready"; es.classList.add("ok");
   $("status").textContent="Pick a level and start a game";
+  evalBarFen=null; bookFen=null; refreshEval(); refreshBook();
   window.__engineReady=true;   // test hook
 }).catch(err=>{
   const es=$("engineStatus"); es.textContent="engine failed: "+err.message; es.classList.add("bad");
