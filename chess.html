@@ -117,6 +117,59 @@
   #navBtns{display:flex; gap:6px; margin-top:8px}
   #navBtns button{flex:1}
 
+  /* players: names, captured material, clocks */
+  #players{display:flex; flex-direction:column; gap:8px}
+  .prow{display:flex; align-items:center; gap:8px; min-height:28px}
+  .prow .pname{font-size:13px; color:var(--bright); min-width:104px; font-weight:600}
+  .prow.active .pname{color:#9bc700}
+  .prow .pcap{flex:1; display:flex; align-items:center; flex-wrap:wrap; min-height:18px; line-height:1}
+  .pcap .capp{font-size:16px; margin-right:-3px}
+  .pcap .capp.w{color:#f2f2f2; text-shadow:0 0 1px #000}
+  .pcap .capp.b{color:#4a4844}
+  .pcap .adv{margin-left:7px; font-size:12px; font-weight:700; color:#9bc700}
+  .prow .clock{font-variant-numeric:tabular-nums; font-size:20px; font-weight:700; letter-spacing:.02em;
+    background:var(--panel2); border-radius:4px; padding:2px 10px; color:var(--text); min-width:78px; text-align:center}
+  .prow.active .clock{background:#4e4b45; color:var(--bright)}
+  .prow.lowtime .clock{color:#e06c5b}
+  .prow .clock.hidden{display:none}
+
+  /* built-in book: opening name beside the move */
+  .bookrow .bname{margin-left:auto; font-size:11px; opacity:.6; text-align:right; white-space:nowrap;
+    overflow:hidden; text-overflow:ellipsis; max-width:200px}
+
+  /* coaching / teaching mode */
+  #teachBox{display:none; margin:8px 0; padding:8px 10px; border-radius:5px; font-size:13px;
+    background:var(--panel2); border-left:3px solid #888; line-height:1.5}
+  #teachBox.good{border-left-color:#7ea640}
+  #teachBox.inacc{border-left-color:#56b4e9}
+  #teachBox.mist{border-left-color:#e69f00}
+  #teachBox.blun{border-left-color:#df5353}
+  #teachBox.thinking{border-left-color:#888; opacity:.75}
+  #teachBox .bmove{color:#9bc700; font-weight:600}
+  #teachActions{display:none; gap:6px; margin-top:8px}
+  #teachActions button{flex:1}
+  #teachPlan{display:none; font-size:12px; opacity:.8; margin-top:8px; line-height:1.5}
+  #coachToggleBtn.on,#hintBtn.on{background:var(--accent); border-color:var(--accent); color:#fff}
+  .hintov{position:absolute; inset:0; background:rgba(54,146,231,.4); pointer-events:none; z-index:2}
+
+  /* side-panel order: opening book + play info on top, setup below */
+  #bookCard{order:1} #chatCard{order:2} #playersCard{order:3} #playCard{order:4}
+  #setupCard{order:5} #appearanceCard{order:6} #analysisCard{order:7}
+
+  /* coach chat */
+  #chatThread{max-height:230px; overflow-y:auto; display:flex; flex-direction:column; gap:6px; margin-top:4px}
+  #chatThread:empty{display:none}
+  .cmsg{padding:6px 9px; border-radius:8px; font-size:13px; line-height:1.45; max-width:92%; white-space:pre-wrap; word-wrap:break-word}
+  .cmsg.coach{background:var(--panel2); align-self:flex-start; border-left:3px solid #7ea640}
+  .cmsg.coach.blun{border-left-color:#df5353} .cmsg.coach.mist{border-left-color:#e69f00} .cmsg.coach.inacc{border-left-color:#56b4e9}
+  .cmsg.you{background:#2b3b4a; align-self:flex-end}
+  .cmsg.sys{background:transparent; opacity:.55; font-size:12px; align-self:center; padding:2px}
+  .cmsg .bmove{color:#9bc700; font-weight:600}
+  #chatHold{display:none; gap:6px; margin-top:8px}
+  #chatHold button{flex:1}
+  #chatInput{background:var(--panel2); color:var(--bright); border:1px solid #444; border-radius:4px; padding:6px 10px; font-size:13px}
+  #chatInput:disabled{opacity:.5}
+
   /* analysis */
   #anaProgressWrap{display:none; margin:8px 0}
   #anaProgressWrap.on{display:block}
@@ -164,12 +217,45 @@
   </div>
 
   <div id="side">
-    <div class="card">
+    <div class="card" id="playersCard">
+      <div id="players">
+        <div class="prow" id="prowTop">
+          <span class="pname" id="nameTop">Black</span>
+          <span class="pcap" id="capTop"></span>
+          <span class="clock hidden" id="clockTop">0:00</span>
+        </div>
+        <div class="prow" id="prowBottom">
+          <span class="pname" id="nameBottom">White</span>
+          <span class="pcap" id="capBottom"></span>
+          <span class="clock hidden" id="clockBottom">0:00</span>
+        </div>
+      </div>
+    </div>
+    <div class="card" id="chatCard">
+      <h2>Coach <button id="coachToggleBtn" class="mini">off</button></h2>
+      <div id="chatThread"></div>
+      <div id="chatHold"><button id="teachBackBtn">Take it back</button><button id="teachPlayBtn" class="primary">Play on</button></div>
+      <div class="row" id="chatInputRow" style="margin-bottom:0; margin-top:8px">
+        <input id="chatInput" type="text" placeholder="Turn the coach on to chat…" autocomplete="off" disabled style="flex:1">
+        <button id="chatSendBtn" class="blue" disabled>Send</button>
+        <button id="hintBtn" disabled>Hint</button>
+      </div>
+    </div>
+    <div class="card" id="setupCard">
       <h2>New game</h2>
       <div class="row"><label>Level</label>
         <div class="lvlbtns" id="lvlbtns"></div>
       </div>
       <div class="hint" id="lvlHint"></div>
+      <div class="row" style="margin-top:8px"><label>Time</label>
+        <select id="timeSel" style="flex:1">
+          <option value="0" selected>Unlimited</option>
+          <option value="180+2">3 + 2 · Blitz</option>
+          <option value="300+0">5 + 0 · Blitz</option>
+          <option value="600+0">10 + 0 · Rapid</option>
+          <option value="900+10">15 + 10 · Rapid</option>
+        </select>
+      </div>
       <div class="row" style="margin-top:8px"><label>Play as</label>
         <select id="colorSel">
           <option value="r" selected>Random</option>
@@ -180,13 +266,13 @@
       </div>
     </div>
 
-    <div class="card">
+    <div class="card" id="appearanceCard">
       <h2>Appearance</h2>
       <div class="row"><label>Board</label><select id="themeSel" style="flex:1"></select></div>
       <div class="row" style="margin-bottom:0"><label>Pieces</label><select id="pieceSel" style="flex:1"></select></div>
     </div>
 
-    <div class="card">
+    <div class="card" id="playCard">
       <div id="status">Loading…</div>
       <div id="opening"></div>
       <div id="moves"></div>
@@ -211,9 +297,10 @@
       <div id="bookName">—</div>
       <div id="bookMoves"></div>
       <div id="bookHint" class="hint"></div>
+      <div id="teachPlan"></div>
     </div>
 
-    <div class="card">
+    <div class="card" id="analysisCard">
       <h2>Analysis</h2>
       <div class="row">
         <button class="blue" id="analyzeBtn" disabled>Analyze game</button>
@@ -578,7 +665,7 @@ function renderBoard(){
     const sq=div.dataset.sq;
     // clear dynamic bits
     div.classList.remove("lastmove","selected","checked");
-    div.querySelectorAll(".piece,.dot,.ring").forEach(n=>n.remove());
+    div.querySelectorAll(".piece,.dot,.ring,.hintov").forEach(n=>n.remove());
     const piece = pos.get(sq);
     if(piece){
       div.appendChild(makePieceEl(piece));
@@ -591,6 +678,9 @@ function renderBoard(){
       marker.className = piece ? "ring" : "dot";
       div.appendChild(marker);
     }
+    if(hintSquares && viewPly===game.history().length && (sq===hintSquares.from||sq===hintSquares.to)){
+      const h=document.createElement("span"); h.className="hintov"; div.appendChild(h);
+    }
   });
   renderMoves();
   renderStatus();
@@ -598,6 +688,8 @@ function renderBoard(){
   renderMoveComment();
   refreshEval();
   refreshBook();
+  updateMaterial();
+  renderClocks();
 }
 
 /* ============================================================
@@ -686,15 +778,19 @@ function showPromoPicker(toSq){
 }
 function commitHumanMove(mv, animate){
   const moving=game.get(mv.from);
+  const fenBefore=game.fen();
   const made=game.move(mv);
   if(!made) return false;
-  selected=null; legalTargets=[];
+  selected=null; legalTargets=[]; clearHint();
   invalidateAnalysis();
+  clockAfterMove(made.color);
+  const fenAfter=game.fen();
   const after=()=>{
     viewPly=game.history().length;
     playSound();
     renderBoard();
-    maybeEngineMove();
+    if(coachOn && gameActive && engineOk) teachAfterHumanMove(fenBefore, fenAfter, made.san, made.color);
+    else maybeEngineMove();
   };
   if(animate){
     animateMove(made.from, made.to, {color:made.color, type:made.promotion || moving.type}, after);
@@ -853,6 +949,7 @@ async function maybeEngineMove(){
     const fromSq=bestUci.slice(0,2), toSq=bestUci.slice(2,4);
     const moving=game.get(fromSq);
     const made=game.move({from:fromSq, to:toSq, promotion:bestUci[4]||"q"});
+    clockAfterMove(made.color);
     animateMove(made.from, made.to, {color:made.color, type:(made&&made.promotion) || (moving&&moving.type) || "p"}, ()=>{
       viewPly=game.history().length;
       playSound();
@@ -865,10 +962,390 @@ async function maybeEngineMove(){
 }
 function checkGameEnd(){
   if(!game.game_over()) return;
-  gameActive=false;
+  gameActive=false; stopClock();
   $("analyzeBtn").disabled = !engineOk || game.history().length===0;
   renderStatus();
 }
+
+/* ============================================================
+   Material (captured pieces) + clocks
+   ============================================================ */
+const PIECE_VAL   = {p:1, n:3, b:3, r:5, q:9};
+const START_COUNT = {p:8, n:2, b:2, r:2, q:1};
+
+// From a position, work out each side's captured pieces and the material edge.
+function materialInfo(pos){
+  const cnt={w:{p:0,n:0,b:0,r:0,q:0}, b:{p:0,n:0,b:0,r:0,q:0}};
+  for(const row of pos.board()) for(const sq of row){ if(sq && sq.type!=="k") cnt[sq.color][sq.type]++; }
+  const capByWhite={}, capByBlack={}; let adv=0;      // adv>0 => White is ahead
+  for(const t of ["q","r","b","n","p"]){
+    capByWhite[t]=Math.max(0, START_COUNT[t]-cnt.b[t]);   // missing black pieces = taken by White
+    capByBlack[t]=Math.max(0, START_COUNT[t]-cnt.w[t]);
+    adv += (cnt.w[t]-cnt.b[t])*PIECE_VAL[t];
+  }
+  return {capByWhite, capByBlack, adv};
+}
+function capGlyphs(counts, color){
+  let s="";
+  for(const t of ["q","r","b","n","p"])
+    for(let i=0;i<counts[t];i++) s+='<span class="capp '+color+'">'+GLYPH[t]+'</span>';
+  return s;
+}
+function updateMaterial(){
+  const pos=fenAtPly(viewPly);
+  const {capByWhite, capByBlack, adv}=materialInfo(pos);
+  const bottom=orientation, top=(orientation==="w"?"b":"w");
+  const capFor  = c => c==="w" ? capGlyphs(capByWhite,"b") : capGlyphs(capByBlack,"w");
+  const advFor  = c => { const a=(c==="w"?adv:-adv); return a>0 ? '<span class="adv">+'+a+'</span>' : ""; };
+  const nameFor = c => (c===humanColor ? "You" : "Stockfish L"+level) + " · " + (c==="w"?"White":"Black");
+  $("capTop").innerHTML    = capFor(top)+advFor(top);
+  $("capBottom").innerHTML = capFor(bottom)+advFor(bottom);
+  $("nameTop").textContent    = nameFor(top);
+  $("nameBottom").textContent = nameFor(bottom);
+}
+
+/* ---- clocks (Fischer increment; base 0 = Unlimited, i.e. current behavior) ---- */
+let tc={base:0, inc:0};        // seconds
+let clockMs={w:0, b:0};
+let clockSide=null;            // which color's clock is ticking, or null
+let clockIntv=null, lastTick=0;
+let timeoutText=null;          // set when someone flags; shown in the status line
+
+function timed(){ return tc.base>0; }
+function fmtClock(ms){
+  ms=Math.max(0,ms);
+  const m=Math.floor(ms/60000);
+  if(ms<20000){ const s=(ms/1000)%60; return m+":"+s.toFixed(1).padStart(4,"0"); }  // tenths under 20s
+  const s=Math.floor(ms/1000)%60; return m+":"+String(s).padStart(2,"0");
+}
+function renderClocks(){
+  const bottom=orientation, top=(orientation==="w"?"b":"w");
+  const set=(rowId, clockId, color)=>{
+    const clk=$(clockId), row=$(rowId);
+    clk.classList.toggle("hidden", !timed());
+    if(timed()) clk.textContent=fmtClock(clockMs[color]);
+    row.classList.toggle("active", timed() && gameActive && clockSide===color);
+    row.classList.toggle("lowtime", timed() && clockMs[color]<=15000);
+  };
+  set("prowTop","clockTop",top);
+  set("prowBottom","clockBottom",bottom);
+}
+function stopClock(){ if(clockIntv){ clearInterval(clockIntv); clockIntv=null; } clockSide=null; renderClocks(); }
+function startClockFor(color){
+  if(!timed()) return;
+  clockSide=color; lastTick=performance.now();
+  if(!clockIntv) clockIntv=setInterval(clockTick, 100);
+  renderClocks();
+}
+function clockTick(){
+  if(clockSide===null) return;
+  const now=performance.now(), dt=now-lastTick; lastTick=now;
+  clockMs[clockSide]-=dt;
+  if(clockMs[clockSide]<=0){ clockMs[clockSide]=0; const flagged=clockSide; stopClock(); onFlag(flagged); return; }
+  renderClocks();
+}
+function onFlag(color){
+  if(!gameActive) return;
+  gameActive=false; engine.stop();
+  timeoutText=(color==="w"?"Black":"White")+" wins on time";
+  $("analyzeBtn").disabled = !engineOk || game.history().length===0;
+  renderStatus();
+}
+// Call right after a move is applied to the board, with the mover's color.
+function clockAfterMove(moverColor){
+  if(!timed()) return;
+  clockMs[moverColor]+=tc.inc*1000;                       // Fischer increment on move
+  if(gameActive && !game.game_over()) startClockFor(game.turn());
+  else stopClock();
+}
+function setupClocks(){
+  stopClock();
+  timeoutText=null;
+  const [b,i]=($("timeSel").value||"0").split("+").map(Number);
+  tc={base:b||0, inc:i||0};
+  clockMs={w:tc.base*1000, b:tc.base*1000};
+  renderClocks();
+}
+
+/* ============================================================
+   Private coach: spoken commentary via reachi (browser voice fallback)
+   ============================================================ */
+const REACHI_SPEAK_URL="http://127.0.0.1:8765/speak";
+const TEACH_DEPTH=12;
+let coachOn=false;
+let reachiOk=true;         // set false after a failed reachi call, then use the browser voice
+let teachPending=false;    // waiting for Take back / Play on after a flagged move
+let hintSquares=null;      // {from,to} highlighted by the Hint button
+let lastSpokenPlan=null;
+
+function pick(a){ return a[Math.floor(Math.random()*a.length)]; }
+function clearHint(){ hintSquares=null; }
+
+function browserSpeak(text){
+  try{ if(!window.speechSynthesis) return; speechSynthesis.cancel();
+    const u=new SpeechSynthesisUtterance(text); u.rate=1; speechSynthesis.speak(u); }catch(e){}
+}
+async function speak(text){
+  if(!coachOn || !text) return;
+  text=String(text).replace(/<[^>]*>/g,"").replace(/\s+/g," ").trim();
+  if(!text) return;
+  if(reachiOk){
+    try{
+      const ctrl=new AbortController(); const to=setTimeout(()=>ctrl.abort(),2000);
+      const r=await fetch(REACHI_SPEAK_URL,{method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({text}), signal:ctrl.signal});
+      clearTimeout(to);
+      if(r.ok) return;                 // reachi speaks it in its Piper voice
+      reachiOk=false;
+    }catch(e){ reachiOk=false; }        // reachi unreachable -> browser voice for the rest of the session
+  }
+  browserSpeak(text);
+}
+
+function addMsg(role, html, cls){
+  if(html==null || html==="") return null;
+  const t=$("chatThread"); if(!t) return null;
+  const d=document.createElement("div");
+  d.className="cmsg "+role+(cls?(" "+cls):"");
+  d.innerHTML=html;
+  t.appendChild(d); t.scrollTop=t.scrollHeight;
+  return d;
+}
+function setHold(on){ const h=$("chatHold"); if(h) h.style.display=on?"flex":"none"; }
+function clearThread(){ const t=$("chatThread"); if(t) t.innerHTML=""; chatLog=[]; }
+// Older deterministic-coach status calls now post into the chat thread.
+function showTeach(cls, html, withActions){
+  if(html && cls!=="thinking") addMsg("coach", html, (cls==="good"?"good":(cls||"")));
+  setHold(!!withActions);
+}
+
+const OPENING_PLANS={
+  "Ruy Lopez":"White pressures e5 and builds a big centre; Black holds with d6 and expands with b5. Watch the d4 break.",
+  "Italian":"Quiet build-up around e5 and f7. White wants c3 and d4; Black castles and plays d6 and a6.",
+  "Scotch":"White opens the centre early for fast piece play. Black equalises with Qe7 and Nf6 hitting e4.",
+  "Petrov":"Symmetrical and solid for Black. Don't grab e4 carelessly — develop and neutralise.",
+  "Four Knights":"Symmetrical development. Fight for the centre and watch for d4 or Nd5 ideas.",
+  "Vienna":"A King's-Gambit cousin with pieces out first. Mind the e4 and f4 tension.",
+  "King's Gambit":"White sacs a pawn for fast development and the open f-file. Black returns material for development, not greed.",
+  "Sicilian":"Black trades a wing pawn for central play and a queenside majority. Expect opposite-side attacks — race carefully.",
+  "French":"Black takes a solid chain and strikes with c5 and f6. White attacks the kingside; free the light-squared bishop.",
+  "Caro-Kann":"Solid like the French, but the c8-bishop gets out first. Aim for the c5 or e5 breaks.",
+  "Scandinavian":"Black brings the queen out early; tuck it away safely and finish developing.",
+  "Pirc":"Black invites a big centre to hit it with e5 or c5. Careful piece play beats over-extension.",
+  "Modern":"Fianchetto and flexibility. Strike the centre once White commits.",
+  "Alekhine":"Black provokes White's pawns forward, then targets the over-extended centre.",
+  "Queen's Gambit Declined":"Classical and solid. Free the game with c5 or dxc4 and e5. Fight for e4.",
+  "Slav":"Keep the c8-bishop active outside the chain. Break with c5 or e5 at the right moment.",
+  "Semi-Slav":"Rock-solid; often grab c4 and hold it with b5, then hit the centre with c5 or e5.",
+  "Queen's Gambit Accepted":"Don't try to hold the c4-pawn. Finish developing and strike with c5.",
+  "Nimzo-Indian":"Pin and often trade the c3-knight for the bishop pair versus doubled pawns. Blockade c4 and target the pawns.",
+  "Queen's Indian":"Control e4 with pieces — Bb7 and Ba6. Quiet manoeuvring; provoke weaknesses.",
+  "Bogo-Indian":"Check on b4, then trade or retreat and aim for a solid Nimzo-style setup.",
+  "King's Indian":"Let White build the centre, then storm the kingside with f5, f4 and g5. White plays on the queenside.",
+  "Grünfeld":"Hit the big centre from afar with the g7-bishop and c5. Pressure d4 relentlessly.",
+  "Catalan":"White's g2-bishop x-rays the queenside. Black must solve the c8-bishop and the c4 tension.",
+  "Benoni":"Black takes less space for dynamic play with e6, exd5 and a queenside majority via b5.",
+  "Benko":"Black gives a pawn for lasting pressure on the a- and b-files. Long-term, not tactical.",
+  "London":"Easy setup: Bf4, e3, Nf3, Bd3, c3. Aim for e4 or a kingside build-up.",
+  "Colle":"Quiet setup aiming for an e4 break. Develop, castle, then strike the centre.",
+  "Dutch":"Grab kingside space with f5. Leningrad fianchettoes and plays e5; Stonewall clamps e4.",
+  "English":"Flexible flank play. Fight for d5 and e4; it can transpose to many structures.",
+  "Réti":"Hypermodern: attack the centre with pieces, c4 and g3. Invite d5, then undermine it.",
+  "King's Indian Attack":"A universal setup: Nf3, g3, Bg2, O-O, d3, then e4 and a kingside build-up.",
+  "Tarrasch":"Black accepts an isolated d-pawn for active pieces. Use the open lines and outposts.",
+  "Nimzo-Larsen":"Fianchetto the queen's bishop and pressure e5 and the long diagonal.",
+  "Bird":"f4 grabs kingside space; aim for a Stonewall or a quick kingside build-up."
+};
+function planFor(name){
+  if(!name) return null;
+  for(const k in OPENING_PLANS){ if(name.indexOf(k)>=0) return OPENING_PLANS[k]; }
+  return null;
+}
+function updateTeachPlan(title){
+  const el=$("teachPlan");
+  const name = detectOpening() || title;
+  const plan = coachOn ? planFor(name) : null;
+  el.style.display = plan ? "" : "none";
+  el.textContent = plan ? ("Plan: "+plan) : "";
+  if(plan && coachOn && gameActive && viewPly===game.history().length && name!==lastSpokenPlan){
+    lastSpokenPlan=name;
+    proactiveComment("plan");
+  }
+}
+
+// Grade the human's move, speak feedback, and hold before the reply if it's bad.
+async function teachAfterHumanMove(fenBefore, fenAfter, playedSan, mover){
+  const wasTimed=timed();
+  if(wasTimed) stopClock();                       // don't bill coaching time to the clock
+  showTeach("thinking","Checking your move…", false);
+  let rb, ra;
+  try{
+    rb=await engine.go(fenBefore, "go depth "+TEACH_DEPTH, 20);
+    ra=await engine.go(fenAfter,  "go depth "+TEACH_DEPTH, 20);
+  }catch(e){
+    showTeach("","",false);
+    if(wasTimed && gameActive) startClockFor(game.turn());
+    maybeEngineMove(); return;
+  }
+  if(!gameActive){ showTeach("","",false); return; }
+  const oppTurn = mover==="w"?"b":"w";
+  const bestMover  = (mover==="w"?1:-1)*scoreToWhiteCp(rb, mover);
+  const afterMover = (mover==="w"?1:-1)*scoreToWhiteCp(ra, oppTurn);
+  const loss=Math.max(0, bestMover-afterMover);
+  let bestSan=null;
+  if(rb.best && rb.best!=="(none)"){
+    const t=new Chess(fenBefore);
+    const bm=t.move({from:rb.best.slice(0,2),to:rb.best.slice(2,4),promotion:rb.best[4]||"q"});
+    if(bm) bestSan=bm.san;
+  }
+  let cls,label;
+  if(loss>=300){cls="blun";label="a blunder";}
+  else if(loss>=100){cls="mist";label="a mistake";}
+  else if(loss>=50){cls="inacc";label="an inaccuracy";}
+  else {cls="good";label=null;}
+  const hold = loss>=200 && bestSan && bestSan!==playedSan && gameActive;
+  let textMsg, sayMsg;
+  if(cls==="good"){
+    textMsg="✓ "+playedSan+" — solid.";
+    sayMsg=pick(["Good move.","Solid choice.","Nice — that's fine.","Looks good."]);
+  } else {
+    const pawns=(loss/100).toFixed(1);
+    textMsg=playedSan+" is "+label+" — about "+pawns+" pawns"+(bestSan?'. Better was <span class="bmove">'+bestSan+"</span>":"")+".";
+    sayMsg=playedSan+" is "+label+", giving up about "+pawns+" pawns"+(bestSan?". "+bestSan+" was stronger.":".");
+  }
+  lastGradeNote = playedSan+" was "+(cls==="good"?"a fine move":label)+((cls!=="good"&&bestSan)?"; "+bestSan+" was better":"")+".";
+  showTeach(cls, textMsg, hold);
+  speak(sayMsg);
+  if(hold){
+    teachPending=true;                              // wait for Take back / Play on; clock stays paused
+  } else {
+    if(wasTimed && gameActive) startClockFor(game.turn());
+    maybeEngineMove();
+  }
+}
+
+async function giveHint(){
+  if(!gameActive || engineThinking || teachPending || !engineOk) return;
+  if(game.turn()!==humanColor){ showTeach("", "It's not your move yet.", false); speak("It's not your move yet."); return; }
+  const wasTimed=timed(); if(wasTimed) stopClock();
+  showTeach("thinking","Thinking…", false);
+  let r;
+  try{ r=await engine.go(game.fen(), "go depth "+TEACH_DEPTH, 20); }
+  catch(e){ showTeach("","",false); if(wasTimed&&gameActive) startClockFor(game.turn()); return; }
+  if(!gameActive){ showTeach("","",false); return; }
+  if(r.best && r.best!=="(none)"){
+    const from=r.best.slice(0,2), to=r.best.slice(2,4);
+    const t=new Chess(game.fen()); const bm=t.move({from,to,promotion:r.best[4]||"q"});
+    hintSquares={from,to}; renderBoard();
+    const san=bm?bm.san:(from+"–"+to);
+    showTeach("good", 'Hint: consider <span class="bmove">'+san+"</span>.", false);
+    speak("Consider "+san+".");
+  }
+  if(wasTimed && gameActive) startClockFor(game.turn());
+}
+
+function applyCoach(){
+  $("coachToggleBtn").textContent = coachOn?"on":"off";
+  $("coachToggleBtn").classList.toggle("on", coachOn);
+  $("chatInput").disabled=!coachOn; $("chatSendBtn").disabled=!coachOn; $("hintBtn").disabled=!coachOn;
+  $("chatInput").placeholder = coachOn?"Ask the coach anything…":"Turn the coach on to chat…";
+  if(!coachOn){ setHold(false); teachPending=false; $("teachPlan").style.display="none"; }
+  else { lastSpokenPlan=null; bookFen=null; refreshBook();
+         addMsg("sys","Coach on — ask about the position, or just play.");
+         speak(pick(["Coach on. Ask me anything, or just play.","Coaching on. Let's talk through the plans.","I'm here. Let's improve."])); }
+}
+$("coachToggleBtn").addEventListener("click",()=>{ coachOn=!coachOn; applyCoach(); });
+$("hintBtn").addEventListener("click", giveHint);
+$("teachPlayBtn").addEventListener("click",()=>{
+  if(!teachPending) return;
+  teachPending=false; showTeach("","",false);
+  if(timed() && gameActive) startClockFor(game.turn());
+  maybeEngineMove();
+});
+$("teachBackBtn").addEventListener("click",()=>{
+  if(!teachPending) return;
+  teachPending=false; showTeach("","",false);
+  game.undo(); clearHint();
+  viewPly=game.history().length; selected=null; legalTargets=[];
+  if(timed() && gameActive) startClockFor(game.turn());
+  renderBoard();
+  speak(pick(["Okay, take it back.","Sure — try another.","Let's redo that."]));
+});
+
+/* ---- two-way conversation with reachi's local LLM (POST /ask) ---- */
+let chatLog=[];
+let proactiveInFlight=false;
+let lastGradeNote=null;
+function escapeHtml(s){ return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+function coachSystemPreamble(){
+  return "You are a warm, concise chess coach chatting with the player during their game against Stockfish. "+
+         "Talk about plans and ideas in plain language — 1 to 3 short sentences, no long move variations. "+
+         "Be encouraging and specific to the position you are given.";
+}
+function recentHistoryText(){
+  return chatLog.slice(-3).map(x=>"Player: "+x.you+"\nCoach: "+x.coach).join("\n");
+}
+async function coachContext(){
+  const fen=game.fen();
+  const turn=game.turn()==="w"?"White":"Black";
+  const opening=detectOpening()||"an unnamed opening";
+  let evalStr="", bestStr="";
+  if(engineOk){
+    try{
+      const r=await engine.go(fen,"go depth 12",20);
+      const wc=scoreToWhiteCp(r, game.turn());
+      evalStr="Stockfish evaluates it at "+(wc>=0?"+":"")+(wc/100).toFixed(1)+" (plus favours White). ";
+      if(r.best && r.best!=="(none)"){ const t=new Chess(fen);
+        const bm=t.move({from:r.best.slice(0,2),to:r.best.slice(2,4),promotion:r.best[4]||"q"});
+        if(bm) bestStr="Stockfish's top move is "+bm.san+". "; }
+    }catch(e){}
+  }
+  return "Position FEN: "+fen+"\nMoves played: "+(movetext()||"(none yet)")+"\n"+turn+" to move. "+
+         "The human is playing "+(humanColor==="w"?"White":"Black")+". Opening: "+opening+". "+evalStr+bestStr+
+         (lastGradeNote?("Note: "+lastGradeNote+" "):"");
+}
+async function reachiAsk(prompt){
+  try{
+    const ctrl=new AbortController(); const to=setTimeout(()=>ctrl.abort(),20000);
+    const r=await fetch("http://127.0.0.1:8765/ask",{method:"POST",
+      headers:{"Content-Type":"application/json"}, body:JSON.stringify({text:prompt}), signal:ctrl.signal});
+    clearTimeout(to);
+    if(!r.ok) return null;
+    const j=await r.json();
+    return (j && j.response) ? String(j.response).trim() : null;
+  }catch(e){ return null; }
+}
+async function askCoach(userText){
+  userText=(userText||"").trim();
+  if(!userText || !coachOn) return;
+  addMsg("you", escapeHtml(userText));
+  $("chatInput").value="";
+  const pending=addMsg("coach","…");
+  const ctx=await coachContext();
+  const reply=await reachiAsk(coachSystemPreamble()+"\n"+ctx+"\n"+recentHistoryText()+"\nPlayer: "+userText+"\nCoach:");
+  if(pending) pending.remove();
+  if(reply==null){ addMsg("sys","Coach LLM not reachable — start reachi's API on port 8765 (open the game via play-chess.command)."); return; }
+  chatLog.push({you:userText, coach:reply});
+  addMsg("coach", escapeHtml(reply));
+  speak(reply);
+}
+async function proactiveComment(kind){
+  if(!coachOn || proactiveInFlight) return;
+  proactiveInFlight=true;
+  try{
+    const ctx=await coachContext();
+    const ask = kind==="start"
+      ? "The game is just starting. In one short, friendly sentence, greet the player and say what kind of game to aim for."
+      : "In one short, encouraging sentence, tell the player the main plan for their side in this position.";
+    const pending=addMsg("coach","…");
+    const reply=await reachiAsk(coachSystemPreamble()+"\n"+ctx+"\n"+ask);
+    if(pending) pending.remove();
+    if(reply){ chatLog.push({you:"(the coach commented on the position)", coach:reply});
+               addMsg("coach", escapeHtml(reply)); speak(reply); }
+  } finally { proactiveInFlight=false; }
+}
+$("chatSendBtn").addEventListener("click",()=>askCoach($("chatInput").value));
+$("chatInput").addEventListener("keydown",e=>{ if(e.key==="Enter"){ e.preventDefault(); askCoach($("chatInput").value); } });
 
 /* ============================================================
    Status, move list, navigation
@@ -884,6 +1361,7 @@ function resultText(){
 function renderStatus(){
   const s=$("status");
   if(!engineOk && !gameActive){ s.textContent="Engine unavailable — see status above"; }
+  if(timeoutText){ s.textContent="🏁 "+timeoutText; return; }
   const over=resultText();
   if(over){ s.textContent="🏁 "+over; return; }
   if(!gameActive){ s.textContent="Pick a level and start a game"; return; }
@@ -947,27 +1425,34 @@ function startGame(){
   orientation = humanColor;
   game=new Chess();
   selected=null; legalTargets=[]; viewPly=0; pendingPromo=null;
+  clearHint(); teachPending=false; lastSpokenPlan=null;
   invalidateAnalysis();
   gameActive=true;
   $("analyzeBtn").disabled=true;
   evalBarFen=null; bookFen=null;
+  setupClocks();
   buildBoard(); renderBoard();
+  if(timed()) startClockFor(game.turn());
+  if(coachOn){ clearThread(); lastGradeNote=null; addMsg("sys","New game."); speak(pick(["New game. Good luck.","Let's play."])); proactiveComment("start"); }
   maybeEngineMove();
 }
 $("newGameBtn").addEventListener("click",startGame);
 $("flipBtn").addEventListener("click",()=>{ orientation = orientation==="w"?"b":"w"; evalBarFen=null; buildBoard(); renderBoard(); });
 $("resignBtn").addEventListener("click",()=>{
   if(!gameActive) return;
-  gameActive=false; engine.stop();
+  gameActive=false; engine.stop(); stopClock();
   $("status").textContent="🏳 You resigned. Stockfish wins.";
   $("analyzeBtn").disabled = !engineOk || game.history().length===0;
 });
 $("takebackBtn").addEventListener("click",()=>{
   if(engineThinking || game.history().length===0) return;
+  teachPending=false; clearHint(); showTeach("","",false);
   // undo back to the human's previous turn
   game.undo();
   if(gameActive && game.history().length>0 && game.turn()!==humanColor) game.undo();
   if(!gameActive) gameActive = !game.game_over();
+  timeoutText=null;
+  if(timed() && gameActive) startClockFor(game.turn()); else stopClock();
   invalidateAnalysis();
   viewPly=game.history().length;
   selected=null; legalTargets=[];
@@ -1293,53 +1778,106 @@ let bookSeq = 0;
 const bookCache = new Map();
 
 const BOOK_LINES = [
-  {n:"Ruy Lopez", m:["e4","e5","Nf3","Nc6","Bb5"]},
-  {n:"Italian Game", m:["e4","e5","Nf3","Nc6","Bc4"]},
-  {n:"Scotch Game", m:["e4","e5","Nf3","Nc6","d4"]},
-  {n:"Petrov Defense", m:["e4","e5","Nf3","Nf6"]},
-  {n:"Philidor Defense", m:["e4","e5","Nf3","d6"]},
-  {n:"King's Gambit", m:["e4","e5","f4"]},
-  {n:"Vienna Game", m:["e4","e5","Nc3"]},
-  {n:"Sicilian Defense", m:["e4","c5"]},
-  {n:"Sicilian, Najdorf", m:["e4","c5","Nf3","d6","d4","cxd4","Nxd4","Nf6","Nc3","a6"]},
-  {n:"Sicilian, Dragon", m:["e4","c5","Nf3","d6","d4","cxd4","Nxd4","Nf6","Nc3","g6"]},
-  {n:"French Defense", m:["e4","e6"]},
-  {n:"Caro-Kann Defense", m:["e4","c6"]},
-  {n:"Scandinavian Defense", m:["e4","d5"]},
-  {n:"Pirc Defense", m:["e4","d6"]},
-  {n:"Alekhine Defense", m:["e4","Nf6"]},
-  {n:"Queen's Gambit", m:["d4","d5","c4"]},
-  {n:"Queen's Gambit Declined", m:["d4","d5","c4","e6"]},
-  {n:"Queen's Gambit Accepted", m:["d4","d5","c4","dxc4"]},
-  {n:"Slav Defense", m:["d4","d5","c4","c6"]},
-  {n:"London System", m:["d4","d5","Bf4"]},
-  {n:"King's Indian Defense", m:["d4","Nf6","c4","g6","Nc3","Bg7"]},
-  {n:"Nimzo-Indian Defense", m:["d4","Nf6","c4","e6","Nc3","Bb4"]},
-  {n:"Queen's Indian Defense", m:["d4","Nf6","c4","e6","Nf3","b6"]},
-  {n:"Grunfeld Defense", m:["d4","Nf6","c4","g6","Nc3","d5"]},
-  {n:"Catalan Opening", m:["d4","Nf6","c4","e6","g3"]},
-  {n:"Dutch Defense", m:["d4","f5"]},
-  {n:"English Opening", m:["c4"]},
-  {n:"Reti Opening", m:["Nf3","d5","c4"]},
-  {n:"King's Indian Attack", m:["Nf3","d5","g3"]}
+  {n:"Ruy Lopez", m:["e4","e5","Nf3","Nc6","Bb5","a6","Ba4","Nf6","O-O","Be7","Re1","b5","Bb3","d6","c3","O-O"]},
+  {n:"Ruy Lopez, Berlin", m:["e4","e5","Nf3","Nc6","Bb5","Nf6","O-O","Nxe4","d4","Nd6","Bxc6","dxc6","dxe5","Nf5"]},
+  {n:"Ruy Lopez, Exchange", m:["e4","e5","Nf3","Nc6","Bb5","a6","Bxc6","dxc6","O-O"]},
+  {n:"Italian Game", m:["e4","e5","Nf3","Nc6","Bc4","Bc5","c3","Nf6","d3","d6","O-O","O-O"]},
+  {n:"Two Knights Defense", m:["e4","e5","Nf3","Nc6","Bc4","Nf6","d3","Be7","O-O","O-O"]},
+  {n:"Evans Gambit", m:["e4","e5","Nf3","Nc6","Bc4","Bc5","b4","Bxb4","c3","Ba5"]},
+  {n:"Scotch Game", m:["e4","e5","Nf3","Nc6","d4","exd4","Nxd4","Nf6","Nxc6","bxc6","e5","Qe7"]},
+  {n:"Scotch Gambit", m:["e4","e5","Nf3","Nc6","d4","exd4","Bc4","Bc5"]},
+  {n:"Four Knights Game", m:["e4","e5","Nf3","Nc6","Nc3","Nf6","Bb5","Bb4"]},
+  {n:"Petrov Defense", m:["e4","e5","Nf3","Nf6","Nxe5","d6","Nf3","Nxe4","d4","d5","Bd3","Nc6"]},
+  {n:"Philidor Defense", m:["e4","e5","Nf3","d6","d4","exd4","Nxd4","Nf6","Nc3","Be7"]},
+  {n:"Vienna Game", m:["e4","e5","Nc3","Nf6","f4","d5","fxe5","Nxe4"]},
+  {n:"King's Gambit", m:["e4","e5","f4","exf4","Nf3","g5","h4","g4"]},
+  {n:"King's Gambit Declined", m:["e4","e5","f4","Bc5","Nf3","d6"]},
+  {n:"Sicilian, Najdorf", m:["e4","c5","Nf3","d6","d4","cxd4","Nxd4","Nf6","Nc3","a6","Be3","e5","Nb3","Be6"]},
+  {n:"Sicilian, Dragon", m:["e4","c5","Nf3","d6","d4","cxd4","Nxd4","Nf6","Nc3","g6","Be3","Bg7","f3","O-O","Qd2","Nc6"]},
+  {n:"Sicilian, Classical", m:["e4","c5","Nf3","d6","d4","cxd4","Nxd4","Nf6","Nc3","Nc6"]},
+  {n:"Sicilian, Scheveningen", m:["e4","c5","Nf3","d6","d4","cxd4","Nxd4","Nf6","Nc3","e6"]},
+  {n:"Sicilian, Sveshnikov", m:["e4","c5","Nf3","Nc6","d4","cxd4","Nxd4","Nf6","Nc3","e5","Ndb5","d6"]},
+  {n:"Sicilian, Taimanov", m:["e4","c5","Nf3","e6","d4","cxd4","Nxd4","Nc6"]},
+  {n:"Sicilian, Kan", m:["e4","c5","Nf3","e6","d4","cxd4","Nxd4","a6"]},
+  {n:"Sicilian, Accelerated Dragon", m:["e4","c5","Nf3","Nc6","d4","cxd4","Nxd4","g6","c4","Bg7"]},
+  {n:"Sicilian, Rossolimo", m:["e4","c5","Nf3","Nc6","Bb5","g6"]},
+  {n:"Sicilian, Moscow", m:["e4","c5","Nf3","d6","Bb5+","Bd7","Bxd7+","Qxd7"]},
+  {n:"Sicilian, Alapin", m:["e4","c5","c3","d5","exd5","Qxd5","d4","Nf6","Nf3","Bg4"]},
+  {n:"Sicilian, Alapin 2...Nf6", m:["e4","c5","c3","Nf6","e5","Nd5","d4","cxd4","Nf3","Nc6"]},
+  {n:"Sicilian, Closed", m:["e4","c5","Nc3","Nc6","g3","g6","Bg2","Bg7"]},
+  {n:"Sicilian, Smith-Morra Gambit", m:["e4","c5","d4","cxd4","c3","dxc3","Nxc3","Nc6"]},
+  {n:"Sicilian, Grand Prix Attack", m:["e4","c5","Nc3","Nc6","f4","g6"]},
+  {n:"French, Advance", m:["e4","e6","d4","d5","e5","c5","c3","Nc6","Nf3","Qb6"]},
+  {n:"French, Tarrasch", m:["e4","e6","d4","d5","Nd2","Nf6","e5","Nfd7","Bd3","c5"]},
+  {n:"French, Winawer", m:["e4","e6","d4","d5","Nc3","Bb4","e5","c5","a3","Bxc3+","bxc3","Ne7"]},
+  {n:"French, Classical", m:["e4","e6","d4","d5","Nc3","Nf6","Bg5","Be7"]},
+  {n:"French, Exchange", m:["e4","e6","d4","d5","exd5","exd5","Bd3","Nc6"]},
+  {n:"French, Rubinstein", m:["e4","e6","d4","d5","Nc3","dxe4","Nxe4","Nd7"]},
+  {n:"Caro-Kann, Classical", m:["e4","c6","d4","d5","Nc3","dxe4","Nxe4","Bf5","Ng3","Bg6","h4","h6","Nf3","Nd7"]},
+  {n:"Caro-Kann, Advance", m:["e4","c6","d4","d5","e5","Bf5","Nf3","e6","Be2","c5"]},
+  {n:"Caro-Kann, Exchange", m:["e4","c6","d4","d5","exd5","cxd5","Bd3","Nc6"]},
+  {n:"Caro-Kann, Panov Attack", m:["e4","c6","d4","d5","exd5","cxd5","c4","Nf6","Nc3","e6"]},
+  {n:"Caro-Kann, Two Knights", m:["e4","c6","Nc3","d5","Nf3","Bg4","h3","Bxf3","Qxf3"]},
+  {n:"Scandinavian Defense", m:["e4","d5","exd5","Qxd5","Nc3","Qa5","d4","Nf6","Nf3","c6"]},
+  {n:"Scandinavian, Modern", m:["e4","d5","exd5","Nf6","d4","Nxd5"]},
+  {n:"Pirc Defense", m:["e4","d6","d4","Nf6","Nc3","g6","f4","Bg7","Nf3","O-O"]},
+  {n:"Modern Defense", m:["e4","g6","d4","Bg7","Nc3","d6","f4"]},
+  {n:"Alekhine Defense", m:["e4","Nf6","e5","Nd5","d4","d6","Nf3","g6"]},
+  {n:"Queen's Gambit Declined", m:["d4","d5","c4","e6","Nc3","Nf6","Bg5","Be7","e3","O-O"]},
+  {n:"QGD, Exchange", m:["d4","d5","c4","e6","Nc3","Nf6","cxd5","exd5","Bg5","c6"]},
+  {n:"Queen's Gambit Accepted", m:["d4","d5","c4","dxc4","Nf3","Nf6","e3","e6","Bxc4","c5"]},
+  {n:"Slav Defense", m:["d4","d5","c4","c6","Nf3","Nf6","Nc3","dxc4","a4","Bf5"]},
+  {n:"Semi-Slav Defense", m:["d4","d5","c4","c6","Nf3","Nf6","Nc3","e6","e3","Nbd7"]},
+  {n:"Slav, Exchange", m:["d4","d5","c4","c6","cxd5","cxd5","Nc3","Nf6","Nf3","Nc6"]},
+  {n:"London System", m:["d4","d5","Bf4","Nf6","e3","e6","Nf3","c5","c3","Nc6"]},
+  {n:"Colle System", m:["d4","d5","Nf3","Nf6","e3","e6","Bd3","c5","c3","Nc6"]},
+  {n:"Tarrasch Defense", m:["d4","d5","c4","e6","Nc3","c5","cxd5","exd5"]},
+  {n:"Chigorin Defense", m:["d4","d5","c4","Nc6"]},
+  {n:"Nimzo-Indian, Rubinstein", m:["d4","Nf6","c4","e6","Nc3","Bb4","e3","O-O","Bd3","d5"]},
+  {n:"Nimzo-Indian, Classical", m:["d4","Nf6","c4","e6","Nc3","Bb4","Qc2","O-O"]},
+  {n:"Queen's Indian Defense", m:["d4","Nf6","c4","e6","Nf3","b6","g3","Ba6"]},
+  {n:"Bogo-Indian Defense", m:["d4","Nf6","c4","e6","Nf3","Bb4+","Bd2","Qe7"]},
+  {n:"King's Indian, Classical", m:["d4","Nf6","c4","g6","Nc3","Bg7","e4","d6","Nf3","O-O","Be2","e5"]},
+  {n:"Grünfeld, Exchange", m:["d4","Nf6","c4","g6","Nc3","d5","cxd5","Nxd5","e4","Nxc3","bxc3","Bg7"]},
+  {n:"Benoni, Modern", m:["d4","Nf6","c4","c5","d5","e6","Nc3","exd5","cxd5","d6"]},
+  {n:"Benko Gambit", m:["d4","Nf6","c4","c5","d5","b5"]},
+  {n:"Catalan Opening", m:["d4","Nf6","c4","e6","g3","d5","Bg2","Be7","Nf3","O-O"]},
+  {n:"Budapest Gambit", m:["d4","Nf6","c4","e5","dxe5","Ng4"]},
+  {n:"Dutch, Leningrad", m:["d4","f5","g3","Nf6","Bg2","g6","Nf3","Bg7"]},
+  {n:"Dutch, Stonewall", m:["d4","f5","g3","Nf6","Bg2","e6","Nf3","d5","O-O","Bd6","c4","c6"]},
+  {n:"Dutch, Classical", m:["d4","f5","c4","Nf6","Nc3","e6"]},
+  {n:"English, Symmetrical", m:["c4","c5","Nc3","Nc6","g3","g6","Bg2","Bg7"]},
+  {n:"English, Reversed Sicilian", m:["c4","e5","Nc3","Nf6","Nf3","Nc6"]},
+  {n:"English, Anglo-Indian", m:["c4","Nf6","Nc3","e6","Nf3","Bb4"]},
+  {n:"English, Slav setup", m:["c4","c6","d4","d5"]},
+  {n:"Réti Opening", m:["Nf3","d5","c4","e6","g3","Nf6","Bg2"]},
+  {n:"King's Indian Attack", m:["Nf3","d5","g3","c5","Bg2","Nc6","O-O"]},
+  {n:"Nimzo-Larsen Attack", m:["b3","e5","Bb2","Nc6","e3"]},
+  {n:"Bird's Opening", m:["f4","d5","Nf3","Nf6","e3"]}
 ];
 
 function fmtCount(n){ return n>=1e6?(n/1e6).toFixed(1)+"M":n>=1e3?Math.round(n/1e3)+"k":""+n; }
 
 function offlineBook(){
   const hist=game.history();
-  let name=null, best=-1;
-  const next=new Map();
+  const next=new Map();                       // san -> {count, name}
   for(const line of BOOK_LINES){
-    let i=0; while(i<hist.length && i<line.m.length && line.m[i]===hist[i]) i++;
-    if(i===hist.length && line.m.length>i){ const s=line.m[i]; if(!next.has(s)) next.set(s,s); }   // continuation
-    if(i===line.m.length && i===hist.length && i>best){ best=i; name=line.n; }                       // exactly on a named line
+    let i=0; while(i<line.m.length && i<hist.length && line.m[i]===hist[i]) i++;
+    if(i<hist.length) continue;               // this line diverged from the moves played
+    if(line.m.length>i){                      // it offers a next move from here
+      const s=line.m[i];
+      const e=next.get(s)||{count:0,name:null};
+      e.count++; e.name=e.name||line.n;
+      next.set(s,e);
+    }
   }
-  const moves=[...next.keys()].map(s=>({san:s, uci:null, total:null}));
-  return {source:"offline", opening: name?{eco:"",name:name}:null, moves:moves, total:null};
+  const curName=detectOpening();              // robust longest-prefix opening name
+  const moves=[...next.entries()].sort((a,b)=>b[1].count-a[1].count)
+      .map(([san,e])=>({san, uci:null, total:null, count:e.count, name:e.name}));
+  return {source:"offline", opening: curName?{eco:"",name:curName}:null, moves, total:null};
 }
 
-async function fetchBook(fen){
+async function fetchBookOnline(fen){
   if(bookCache.has(fen)) return bookCache.get(fen);
   const url="https://explorer.lichess.ovh/lichess?variant=standard&moves=10&topGames=0&recentGames=0&fen="+encodeURIComponent(fen);
   try{
@@ -1356,7 +1894,7 @@ async function fetchBook(fen){
     bookCache.set(fen, data);
     return data;
   }catch(e){
-    return offlineBook();             // not cached, so online is retried later
+    return null;                      // offline or blocked: caller falls back to the built-in book
   }
 }
 
@@ -1372,33 +1910,35 @@ function bookTitle(data){
   return null;
 }
 
-function offlineReason(){
-  return location.protocol==="file:"
-    ? "Opening book is blocked on file:// — open the page via play-chess.command (serves it over http)."
-    : "Lichess explorer unreachable (offline?).";
-}
 function renderBook(data, fen){
   const nameEl=$("bookName"), movesEl=$("bookMoves"), hintEl=$("bookHint");
   const title=bookTitle(data);
   if(title) $("opening").textContent="Opening: "+title;     // upgrade the quick name line
   movesEl.innerHTML="";
-  nameEl.textContent = title || (data&&data.source==="offline"?"Book moves":"—");
+  nameEl.textContent = title || (data&&data.moves&&data.moves.length?"Book moves":"—");
+  updateTeachPlan(title);                                    // spoken-coach opening plan hook
   if(!data || !data.moves || !data.moves.length){
-    hintEl.textContent = data&&data.source==="offline" ? offlineReason() : "Out of book.";
+    hintEl.textContent = "Out of book — you're on your own from here.";
     return;
   }
   const pos = fenAtPly(viewPly);
   const live = (viewPly===game.history().length);
   const humansTurn = live && gameActive && pos.turn()===humanColor && !engineThinking;
+  const online = data.source==="lichess";
   data.moves.slice(0,8).forEach(m=>{
     let from=null,to=null,promo=null;
     if(m.uci){ from=m.uci.slice(0,2); to=m.uci.slice(2,4); promo=m.uci[4]||null; }
     else { const t=fenAtPly(viewPly); const mv=t.move(m.san); if(mv){ from=mv.from; to=mv.to; promo=mv.promotion||null; } }
     const row=document.createElement("div");
     row.className="bookrow"+(humansTurn&&from?" playable":"");
-    const share = (m.total!=null && data.total) ? " · "+Math.round(m.total/data.total*100)+"%" : "";
-    const cnt = m.total!=null ? fmtCount(m.total)+share : "";
-    row.innerHTML='<span class="bsan">'+m.san+'</span>'+wdlBar(m)+'<span class="bcount">'+cnt+'</span>';
+    let right;
+    if(online){
+      const share = (m.total!=null && data.total) ? " · "+Math.round(m.total/data.total*100)+"%" : "";
+      right = wdlBar(m)+'<span class="bcount">'+(m.total!=null?fmtCount(m.total)+share:"")+'</span>';
+    } else {
+      right = '<span class="bname">'+(m.name||"")+'</span>';   // built-in book: show where the move leads
+    }
+    row.innerHTML='<span class="bsan">'+m.san+'</span>'+right;
     if(humansTurn && from){
       row.addEventListener("click",()=>{
         if(viewPly!==game.history().length) return;
@@ -1407,9 +1947,9 @@ function renderBook(data, fen){
     }
     movesEl.appendChild(row);
   });
-  hintEl.textContent = data.source==="offline"
-                     ? (location.protocol==="file:" ? "Offline book — run play-chess.command for live Lichess stats." : "Offline book (no live stats).")
-                     : (humansTurn ? "Click a move to play it." : "");
+  hintEl.textContent = online
+      ? (humansTurn ? "Live Lichess stats · click a move to play it." : "Live Lichess win/draw/loss stats.")
+      : (humansTurn ? "Built-in book · click a move to play it." : "Built-in book · live stats appear when online.");
 }
 
 async function refreshBook(){
@@ -1418,11 +1958,12 @@ async function refreshBook(){
   if(fen===bookFen) return;
   bookFen=fen;
   const seq=++bookSeq;
-  await new Promise(r=>setTimeout(r,180));      // debounce bursts of renders
+  renderBook(offlineBook(), fen);                 // built-in book shows instantly, no setup needed
+  await new Promise(r=>setTimeout(r,150));         // brief debounce before touching the network
   if(seq!==bookSeq) return;
-  const data=await fetchBook(fen);
-  if(seq!==bookSeq) return;                       // a newer position superseded us
-  renderBook(data, fen);
+  const online=await fetchBookOnline(fen);         // upgrade to live Lichess stats if reachable
+  if(seq!==bookSeq) return;                        // a newer position superseded us
+  if(online && online.moves && online.moves.length) renderBook(online, fen);
 }
 
 function applyBookVisibility(){
