@@ -1070,7 +1070,9 @@ function setupClocks(){
 /* ============================================================
    Private coach: spoken commentary via reachi (browser voice fallback)
    ============================================================ */
-const REACHI_SPEAK_URL="http://127.0.0.1:8765/speak";
+// Same-origin: the page is served by reachi, so /speak and /ask hit whatever
+// host:port served it (e.g. http://192.168.12.174:8765 on pop). No hardcoded IP.
+const REACHI_SPEAK_URL="/speak";
 const TEACH_DEPTH=12;
 let coachOn=false;
 let reachiOk=true;         // set false after a failed reachi call, then use the browser voice
@@ -1307,7 +1309,7 @@ async function coachContext(){
 async function reachiAsk(prompt){
   try{
     const ctrl=new AbortController(); const to=setTimeout(()=>ctrl.abort(),20000);
-    const r=await fetch("http://127.0.0.1:8765/ask",{method:"POST",
+    const r=await fetch("/ask",{method:"POST",
       headers:{"Content-Type":"application/json"}, body:JSON.stringify({text:prompt}), signal:ctrl.signal});
     clearTimeout(to);
     if(!r.ok) return null;
@@ -1324,7 +1326,7 @@ async function askCoach(userText){
   const ctx=await coachContext();
   const reply=await reachiAsk(coachSystemPreamble()+"\n"+ctx+"\n"+recentHistoryText()+"\nPlayer: "+userText+"\nCoach:");
   if(pending) pending.remove();
-  if(reply==null){ addMsg("sys","Coach LLM not reachable — is reachi's API up on :8765 and its model backend reachable? Open the game at http://127.0.0.1:8765/."); return; }
+  if(reply==null){ addMsg("sys","Coach LLM not reachable — open this game from reachi's server (its http://…:8765/ address, e.g. pop) so it can answer."); return; }
   chatLog.push({you:userText, coach:reply});
   addMsg("coach", escapeHtml(reply));
   speak(reply);
