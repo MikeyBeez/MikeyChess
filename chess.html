@@ -1324,7 +1324,7 @@ async function askCoach(userText){
   const ctx=await coachContext();
   const reply=await reachiAsk(coachSystemPreamble()+"\n"+ctx+"\n"+recentHistoryText()+"\nPlayer: "+userText+"\nCoach:");
   if(pending) pending.remove();
-  if(reply==null){ addMsg("sys","Coach LLM not reachable — is reachi's API up on :8765? Open the game at http://127.0.0.1:8765/ and make sure Ollama is running."); return; }
+  if(reply==null){ addMsg("sys","Coach LLM not reachable — is reachi's API up on :8765 and its model backend reachable? Open the game at http://127.0.0.1:8765/."); return; }
   chatLog.push({you:userText, coach:reply});
   addMsg("coach", escapeHtml(reply));
   speak(reply);
