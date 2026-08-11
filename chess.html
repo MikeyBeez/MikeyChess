@@ -200,6 +200,7 @@
 <body>
 <header>
   <h1>♞ Mikey's Chess</h1><span class="sub">local Stockfish 10 · no account needed</span>
+  <button class="primary" id="startTopBtn" style="margin-left:auto">▶ Start game</button>
   <span id="engineStatus">loading engine…</span>
 </header>
 
@@ -398,7 +399,7 @@ class Engine {
      used to give the engine a choice of sound opening moves. Runs at full
      strength for a clean candidate ranking, then restores MultiPV to 1 so the
      eval bar and analysis (both single-PV) are unaffected. */
-  goRoots(fen, goCmd, multipv){
+  goRoots(fen, goCmd, multipv, skill){
     const run=()=>new Promise(res=>{
       const roots=new Map();               // multipv index -> {move, cp, mate}
       const h=line=>{
@@ -417,7 +418,7 @@ class Engine {
         }
       };
       this.on(h);
-      this.send("setoption name Skill Level value 20");
+      this.send("setoption name Skill Level value "+(skill===undefined?20:skill));
       this.send("setoption name MultiPV value "+multipv);
       this.send("position fen "+fen);
       this.send(goCmd);
@@ -893,7 +894,7 @@ document.addEventListener("pointercancel", onPointerCancel);
    top, still-sound candidates. Lower levels roam a wider window (more variety,
    the occasional slightly worse move); higher levels stay closer to best. */
 const OPENING_PLIES   = 12;  // apply variety for ~first 6 moves per side
-const OPENING_MULTIPV = 4;   // how many candidate moves to consider
+const OPENING_MULTIPV = 6;   // how many candidate moves to consider
 const OPENING_DEPTH   = 10;  // search depth used to rank the candidates
 
 function pickWeighted(items, weights){
@@ -908,7 +909,11 @@ function pickWeighted(items, weights){
 async function engineOpeningMove(){
   if(game.history().length >= OPENING_PLIES) return null;
   let roots;
-  try{ roots = await engine.goRoots(game.fen(), "go depth "+OPENING_DEPTH, OPENING_MULTIPV); }
+  // Rank candidates at the level's own skill and its calibrated depth, so the
+  // opening is played at the SAME strength as the rest of the game (the old
+  // full-strength ranking made low levels open like a master).
+  const sk=LEVELS[level].skill;
+  try{ roots = await engine.goRoots(game.fen(), "go depth "+Math.min(OPENING_DEPTH, sk+1), OPENING_MULTIPV, sk); }
   catch(e){ return null; }
   roots = (roots||[]).filter(r=>r && r.move && r.move!=="(none)");
   if(roots.length < 2) return null;
@@ -1070,9 +1075,12 @@ function setupClocks(){
 /* ============================================================
    Private coach: spoken commentary via reachi (browser voice fallback)
    ============================================================ */
-// Same-origin: the page is served by reachi, so /speak and /ask hit whatever
-// host:port served it (e.g. http://192.168.12.174:8765 on pop). No hardcoded IP.
-const REACHI_SPEAK_URL="/speak";
+// Same-origin when the page is served by reachi (:8765) — /speak and /ask hit
+// whatever host:port served it. But if the page was opened another way (file://,
+// play-chess.command's :8787 server, etc.), fall back to reachi on this machine
+// cross-origin (the API sends Access-Control-Allow-Origin: *).
+const REACHI_BASE=(location.port==="8765") ? "" : "http://127.0.0.1:8765";
+const REACHI_SPEAK_URL=REACHI_BASE+"/speak";
 const TEACH_DEPTH=12;
 let coachOn=false;
 let reachiOk=true;         // set false after a failed reachi call, then use the browser voice
@@ -1176,9 +1184,62 @@ function updateTeachPlan(title){
 }
 
 // Grade the human's move, speak feedback, and hold before the reply if it's bad.
+function _sanEq(a,b){ const n=x=>String(x).replace(/[+#]/g,""); return n(a)===n(b); }
+async function bookCheck(fenBefore, fenAfter, playedSan){
+  // -> {book:bool, name:string|null, main:bool}
+  let book=false, main=false, name=null;
+  try{
+    const data=await fetchBookOnline(fenBefore);
+    if(data && data.moves && data.moves.length){
+      const idx=data.moves.findIndex(x=>_sanEq(x.san,playedSan));
+      const m=idx>=0?data.moves[idx]:null;
+      if(m && (!data.total || !m.total || (m.total/data.total)>=0.02 || m.total>=50)){
+        book=true; main=(idx===0);
+      }
+    }
+  }catch(e){}
+  if(!book){ // offline fallback: known lines
+    const hist=game.history(); const before=hist.slice(0,-1);
+    const seq=before.concat([playedSan]).join(" ");
+    if(Object.keys(OPENINGS).some(k=>k===seq || k.startsWith(seq+" "))) book=true;
+    else book=BOOK_LINES.some(line=>{
+      if(line.m.length<=before.length) return false;
+      for(let i=0;i<before.length;i++) if(line.m[i]!==before[i]) return false;
+      return _sanEq(line.m[before.length],playedSan);
+    });
+  }
+  if(book){
+    try{ const after=await fetchBookOnline(fenAfter); name=bookTitle(after); }catch(e){}
+    if(!name) name=detectOpening()||null;
+  }
+  return {book,name,main};
+}
+let lastSpokenOpening=null;
 async function teachAfterHumanMove(fenBefore, fenAfter, playedSan, mover){
+  if(new Chess(fenAfter).in_checkmate()){          // mate delivered: nothing to grade
+    lastGradeNote = playedSan+" delivered checkmate — the game is won.";
+    showTeach("good", "\u2713 "+playedSan+" — checkmate!", false);
+    speak(pick(["Checkmate! Beautifully done.","Checkmate. Well played.","That's mate — great finish."]));
+    return;
+  }
   const wasTimed=timed();
   if(wasTimed) stopClock();                       // don't bill coaching time to the clock
+  const bk=await bookCheck(fenBefore, fenAfter, playedSan);
+  if(bk.book){                                    // theory: narrate it, never criticize it
+    const nm=bk.name;
+    lastGradeNote = playedSan+" is book theory"+(nm?" ("+nm+")":"")+".";
+    showTeach("good", "\u2713 "+playedSan+" \u2014 book"+(nm?": "+escapeHtml(nm):"")+(bk.main?" (main line)":"")+".", false);
+    if(nm && nm!==lastSpokenOpening){
+      lastSpokenOpening=nm;
+      const times=recordLesson("opening", nm, "the "+nm+" opening");
+      if(times>=2) speak("The "+nm+" — you know this one by now.");
+      else if(times===1) speak("The "+nm+" again — we looked at this one before.");
+      else speak("That's the "+nm+(bk.main?", main line.":"."));
+    }
+    if(wasTimed && gameActive) startClockFor(game.turn());
+    maybeEngineMove();
+    return;
+  }
   showTeach("thinking","Checking your move…", false);
   let rb, ra;
   try{
@@ -1201,9 +1262,11 @@ async function teachAfterHumanMove(fenBefore, fenAfter, playedSan, mover){
     if(bm) bestSan=bm.san;
   }
   let cls,label;
+  const fullmove=parseInt(fenBefore.split(" ")[5]||"1",10);
+  const openingPhase=fullmove<=10;               // shallow evals are noisy early
   if(loss>=300){cls="blun";label="a blunder";}
-  else if(loss>=100){cls="mist";label="a mistake";}
-  else if(loss>=50){cls="inacc";label="an inaccuracy";}
+  else if(loss>=(openingPhase?150:100)){cls="mist";label="a mistake";}
+  else if(!openingPhase && loss>=50){cls="inacc";label="an inaccuracy";}
   else {cls="good";label=null;}
   const hold = loss>=200 && bestSan && bestSan!==playedSan && gameActive;
   let textMsg, sayMsg;
@@ -1214,6 +1277,8 @@ async function teachAfterHumanMove(fenBefore, fenAfter, playedSan, mover){
     const pawns=(loss/100).toFixed(1);
     textMsg=playedSan+" is "+label+" — about "+pawns+" pawns"+(bestSan?'. Better was <span class="bmove">'+bestSan+"</span>":"")+".";
     sayMsg=playedSan+" is "+label+", giving up about "+pawns+" pawns"+(bestSan?". "+bestSan+" was stronger.":".");
+    const seenTimes=recordLesson("mistake", playedSan+"@"+fenBefore.split(" ")[0], playedSan+" was "+label+(bestSan?"; better was "+bestSan:""));
+    if(seenTimes>0) sayMsg+=" I have flagged this exact move here before \u2014 try to remember "+(bestSan||"the better plan")+".";
   }
   lastGradeNote = playedSan+" was "+(cls==="good"?"a fine move":label)+((cls!=="good"&&bestSan)?"; "+bestSan+" was better":"")+".";
   showTeach(cls, textMsg, hold);
@@ -1279,10 +1344,42 @@ let chatLog=[];
 let proactiveInFlight=false;
 let lastGradeNote=null;
 function escapeHtml(s){ return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+/* ---- lesson memory: what the coach has already taught (persists in this browser) ---- */
+const LESSONS_KEY="mikeychess_lessons_v1";       // localStorage = offline cache only
+const LESSONS_NS="chess-lessons";                // canonical store lives in reachi
+function loadLessons(){ try{ return JSON.parse(localStorage.getItem(LESSONS_KEY))||[]; }catch(e){ return []; } }
+function saveLessons(a){ try{ localStorage.setItem(LESSONS_KEY, JSON.stringify(a.slice(-400))); }catch(e){} }
+let lessons=loadLessons();
+(async function syncLessonsFromReachi(){
+  try{
+    const r=await fetch(REACHI_BASE+"/memory?ns="+LESSONS_NS);
+    if(r.ok){ const j=await r.json();
+      if(j && Array.isArray(j.items)){ lessons=j.items; saveLessons(lessons); } }
+  }catch(e){} // offline: keep the local cache
+})();
+function recordLesson(kind, key, text){
+  const prev=lessons.filter(l=>l.kind===kind && l.key===key).length;
+  lessons.push({t:Date.now(), kind:kind, key:key, text:text});
+  saveLessons(lessons);
+  try{ fetch(REACHI_BASE+"/memory",{method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({ns:LESSONS_NS, kind:kind, key:key, text:text})}); }catch(e){}
+  return prev;                                   // times taught before now
+}
+function lessonsDigest(){
+  if(!lessons.length) return "";
+  const seen=new Map();
+  for(const l of lessons){ const k=l.text||l.key; seen.set(k,(seen.get(k)||0)+1); }
+  const items=[...seen.entries()].slice(-14).map(([k,c])=>k+(c>1?" (covered "+c+"x)":""));
+  return "Lessons the coach has already given this player: "+items.join("; ")+". ";
+}
 function coachSystemPreamble(){
   return "You are a warm, concise chess coach chatting with the player during their game against Stockfish. "+
          "Talk about plans and ideas in plain language — 1 to 3 short sentences, no long move variations. "+
-         "Be encouraging and specific to the position you are given.";
+         "Be encouraging and specific to the position you are given. "+
+         "You are also this player's long-term teacher: a list of past lessons may be included. "+
+         "Feel free to reference them (\'we covered the Najdorf last time\'), gently remind the player "+
+         "when they forget one, and occasionally quiz them on a past lesson when the moment is calm.";
 }
 function recentHistoryText(){
   return chatLog.slice(-3).map(x=>"Player: "+x.you+"\nCoach: "+x.coach).join("\n");
@@ -1304,12 +1401,12 @@ async function coachContext(){
   }
   return "Position FEN: "+fen+"\nMoves played: "+(movetext()||"(none yet)")+"\n"+turn+" to move. "+
          "The human is playing "+(humanColor==="w"?"White":"Black")+". Opening: "+opening+". "+evalStr+bestStr+
-         (lastGradeNote?("Note: "+lastGradeNote+" "):"");
+         (lastGradeNote?("Note: "+lastGradeNote+" "):"")+lessonsDigest();
 }
 async function reachiAsk(prompt){
   try{
-    const ctrl=new AbortController(); const to=setTimeout(()=>ctrl.abort(),20000);
-    const r=await fetch("/ask",{method:"POST",
+    const ctrl=new AbortController(); const to=setTimeout(()=>ctrl.abort(),180000); // 180s: first ask after idle may cold-load the model from pop's HDD (~2 min)
+    const r=await fetch(REACHI_BASE+"/ask",{method:"POST",
       headers:{"Content-Type":"application/json"}, body:JSON.stringify({text:prompt}), signal:ctrl.signal});
     clearTimeout(to);
     if(!r.ok) return null;
@@ -1422,6 +1519,7 @@ document.addEventListener("keydown",e=>{
    Game controls
    ============================================================ */
 function startGame(){
+  $("startTopBtn").textContent="\u25b6 New game";
   const colorChoice=$("colorSel").value;
   humanColor = colorChoice==="r" ? (Math.random()<.5?"w":"b") : colorChoice;
   orientation = humanColor;
@@ -1435,10 +1533,11 @@ function startGame(){
   setupClocks();
   buildBoard(); renderBoard();
   if(timed()) startClockFor(game.turn());
-  if(coachOn){ clearThread(); lastGradeNote=null; addMsg("sys","New game."); speak(pick(["New game. Good luck.","Let's play."])); proactiveComment("start"); }
+  if(coachOn){ clearThread(); lastGradeNote=null; lastSpokenOpening=null; lastOptionsFen=null; addMsg("sys","New game."); speak(pick(["New game. Good luck.","Let's play."])); proactiveComment("start"); }
   maybeEngineMove();
 }
 $("newGameBtn").addEventListener("click",startGame);
+$("startTopBtn").addEventListener("click",startGame);
 $("flipBtn").addEventListener("click",()=>{ orientation = orientation==="w"?"b":"w"; evalBarFen=null; buildBoard(); renderBoard(); });
 $("resignBtn").addEventListener("click",()=>{
   if(!gameActive) return;
@@ -1497,7 +1596,7 @@ function buildLevelButtons(){
     });
     wrap.appendChild(b);
   }
-  $("lvlHint").textContent="Stockfish Level "+level+" ≈ "+LEVELS[level].elo+" Elo";
+  $("lvlHint").textContent="Stockfish Level "+level+" \u2248 "+LEVELS[level].elo+" Elo";
 }
 
 /* ============================================================
@@ -1513,7 +1612,9 @@ function invalidateAnalysis(){
 const MATE_CP=1500; // clamp for math/graph
 function scoreToWhiteCp(res, turn){
   let cp;
-  if(res.mate!==null && res.mate!==undefined && res.mate!==0 && res.cp===null){
+  if(res.mate===0){                       // side to move is already checkmated
+    cp = -MATE_CP;
+  } else if(res.mate!==null && res.mate!==undefined && res.cp===null){
     cp = res.mate>0 ? MATE_CP-Math.min(res.mate,20) : -MATE_CP-Math.max(res.mate,-20);
   } else {
     cp = res.cp===null||res.cp===undefined ? 0 : res.cp;
@@ -1912,6 +2013,26 @@ function bookTitle(data){
   return null;
 }
 
+let lastOptionsFen=null;
+function narrateBookOptions(data, fen){
+  if(!coachOn || !gameActive || !data || !data.moves || !data.moves.length) return;
+  if(viewPly!==game.history().length) return;                  // reviewing history
+  const pos=fenAtPly(viewPly);
+  if(pos.turn()!==humanColor || engineThinking) return;        // only on the player's turn
+  if(fen===lastOptionsFen) return;                             // once per position
+  const fullmove=parseInt(fen.split(" ")[5]||"1",10);
+  if(fullmove>12) return;                                      // opening guidance only
+  lastOptionsFen=fen;
+  const hist=game.history();
+  const opts=data.moves.slice(0,4).map(m=>({
+    san:m.san,
+    nm:m.name || OPENINGS[hist.concat([m.san]).join(" ")] || null
+  }));
+  const optTxt=opts.map(o=>o.san+(o.nm?" ("+o.nm+")":"")).join(", ");
+  recordLesson("options", fen.split(" ")[0], "book options "+optTxt);
+  addMsg("coach","Book options: "+escapeHtml(optTxt)+".");
+  speak("Your book moves: "+opts.map(o=>o.nm?(o.san+", the "+o.nm):o.san).join("; ")+".");
+}
 function renderBook(data, fen){
   const nameEl=$("bookName"), movesEl=$("bookMoves"), hintEl=$("bookHint");
   const title=bookTitle(data);
@@ -1919,6 +2040,7 @@ function renderBook(data, fen){
   movesEl.innerHTML="";
   nameEl.textContent = title || (data&&data.moves&&data.moves.length?"Book moves":"—");
   updateTeachPlan(title);                                    // spoken-coach opening plan hook
+  narrateBookOptions(data, fen);                             // tell the player their book options
   if(!data || !data.moves || !data.moves.length){
     hintEl.textContent = "Out of book — you're on your own from here.";
     return;
