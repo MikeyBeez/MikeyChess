@@ -234,6 +234,20 @@
     </div>
     <div class="card" id="chatCard">
       <h2>Coach <button id="coachToggleBtn" class="mini">off</button></h2>
+      <div class="row" style="margin:4px 0 4px">
+        <select id="coachBackendSel" style="width:104px">
+          <option value="ollama">Ollama</option>
+          <option value="llamacpp">llama.cpp</option>
+          <option value="foundation">Foundation API</option>
+        </select>
+        <input id="coachHostInp" type="text" placeholder="local" style="flex:1; min-width:0">
+        <input id="coachPortInp" type="number" placeholder="11434" style="width:74px">
+        <button id="coachConnBtn" class="mini">Apply</button>
+      </div>
+      <div class="row" style="margin:0 0 6px">
+        <label style="font-size:12px">Model</label>
+        <select id="coachModelSel" style="flex:1; min-width:0"><option>—</option></select>
+      </div>
       <div id="chatThread"></div>
       <div id="chatHold"><button id="teachBackBtn">Take it back</button><button id="teachPlayBtn" class="primary">Play on</button></div>
       <div class="row" id="chatInputRow" style="margin-bottom:0; margin-top:8px">
@@ -1322,6 +1336,81 @@ function applyCoach(){
          speak(pick(["Coach on. Ask me anything, or just play.","Coaching on. Let's talk through the plans.","I'm here. Let's improve."])); }
 }
 $("coachToggleBtn").addEventListener("click",()=>{ coachOn=!coachOn; applyCoach(); });
+function coachDefaultPort(){
+  const b=$("coachBackendSel").value;
+  return b==="llamacpp" ? 8080 : b==="ollama" ? 11434 : "";
+}
+$("coachBackendSel").addEventListener("change",()=>{
+  const p=$("coachPortInp"), b=$("coachBackendSel").value;
+  p.disabled = (b==="foundation");
+  if(b==="foundation"){ p.value=""; $("coachHostInp").placeholder="api.openai.com"; }
+  else { $("coachHostInp").placeholder="local";
+         if(!p.value || p.value=="8080" || p.value=="11434") p.value=coachDefaultPort(); }
+});
+async function applyCoachConn(){
+  const b=$("coachBackendSel").value;
+  let raw=($("coachHostInp").value||"").trim();
+  let url;
+  if(b==="foundation"){
+    if(!raw){ addMsg("sys","Enter the foundation API host (e.g. api.openai.com)."); return; }
+    url = raw.startsWith("http") ? raw : "https://"+raw;
+  } else {
+    const port=parseInt($("coachPortInp").value,10)||coachDefaultPort();
+    url = "http://"+(raw||"127.0.0.1")+":"+port;
+  }
+  localStorage.setItem("coachHostUrl",url); localStorage.setItem("coachBackend",b);
+  try{
+    const r=await fetch(REACHI_BASE+"/host",{method:"POST",
+      headers:{"Content-Type":"application/json"}, body:JSON.stringify({host:url})});
+    const j=await r.json().catch(()=>({}));
+    if(r.ok){ addMsg("sys","Coach host: "+escapeHtml(url)+" ("+escapeHtml(j.protocol||b)+")."); await loadCoachModels(); }
+    else addMsg("sys","No model server answering at "+escapeHtml(url)+" \u2014 host unchanged.");
+  }catch(e){ addMsg("sys","Couldn't reach reachi to set the host."); }
+}
+$("coachConnBtn").addEventListener("click",applyCoachConn);
+async function loadCoachModels(){
+  const sel=$("coachModelSel");
+  try{
+    let r=await fetch(REACHI_BASE+"/models"); if(!r.ok) return;
+    let j=await r.json();
+    const savedHost=localStorage.getItem("coachHostUrl");
+    if(savedHost && j.host && savedHost!==j.host){    // re-apply my saved host
+      try{ const h=await fetch(REACHI_BASE+"/host",{method:"POST",
+            headers:{"Content-Type":"application/json"}, body:JSON.stringify({host:savedHost})});
+        if(h.ok){ r=await fetch(REACHI_BASE+"/models"); if(r.ok) j=await r.json(); }
+      }catch(e){}
+    }
+    try{ const u=new URL(j.host.startsWith("http")?j.host:"http://"+j.host);
+      $("coachHostInp").value=(u.hostname==="127.0.0.1"||u.hostname==="localhost")?"":u.hostname;
+      $("coachPortInp").value=u.port||"";
+    }catch(e){}
+    const be=localStorage.getItem("coachBackend");
+    if(be){ $("coachBackendSel").value=be; $("coachPortInp").disabled=(be==="foundation"); }
+    sel.innerHTML="";
+    (j.models||[]).forEach(m=>{ const o=document.createElement("option");
+      o.value=m; o.textContent=m.split("/").pop(); sel.appendChild(o); });
+    const ensure=v=>{ if(v && ![...sel.options].some(o=>o.value===v)){
+      const o=document.createElement("option"); o.value=v; o.textContent=v; sel.appendChild(o); } };
+    ensure(j.active);
+    const want=localStorage.getItem("coachModel");
+    if(want && want!==j.active && (j.models||[]).includes(want)){
+      try{ await fetch(REACHI_BASE+"/model",{method:"POST",
+        headers:{"Content-Type":"application/json"}, body:JSON.stringify({model:want})});
+        sel.value=want; return; }catch(e){}
+    }
+    sel.value=j.active||sel.value;
+  }catch(e){ /* reachi not reachable: leave placeholder */ }
+}
+$("coachModelSel").addEventListener("change",async e=>{
+  const m=e.target.value; if(!m || m==="\u2014") return;
+  localStorage.setItem("coachModel",m);
+  try{
+    const r=await fetch(REACHI_BASE+"/model",{method:"POST",
+      headers:{"Content-Type":"application/json"}, body:JSON.stringify({model:m})});
+    if(r.ok) addMsg("sys","Coach model set to "+escapeHtml(m.split("/").pop())+".");
+  }catch(e){ addMsg("sys","Couldn't switch model \u2014 is reachi running?"); }
+});
+loadCoachModels();
 $("hintBtn").addEventListener("click", giveHint);
 $("teachPlayBtn").addEventListener("click",()=>{
   if(!teachPending) return;
