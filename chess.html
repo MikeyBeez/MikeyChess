@@ -1325,17 +1325,20 @@ async function giveHint(){
   if(wasTimed && gameActive) startClockFor(game.turn());
 }
 
-function applyCoach(){
+function applyCoach(quiet){
   $("coachToggleBtn").textContent = coachOn?"on":"off";
   $("coachToggleBtn").classList.toggle("on", coachOn);
   $("chatInput").disabled=!coachOn; $("chatSendBtn").disabled=!coachOn; $("hintBtn").disabled=!coachOn;
   $("chatInput").placeholder = coachOn?"Ask the coach anything…":"Turn the coach on to chat…";
   if(!coachOn){ setHold(false); teachPending=false; $("teachPlan").style.display="none"; }
   else { lastSpokenPlan=null; bookFen=null; refreshBook();
-         addMsg("sys","Coach on — ask about the position, or just play.");
-         speak(pick(["Coach on. Ask me anything, or just play.","Coaching on. Let's talk through the plans.","I'm here. Let's improve."])); }
+         if(!quiet) addMsg("sys","Coach on — ask about the position, or just play.");
+         if(!quiet) speak(pick(["Coach on. Ask me anything, or just play.","Coaching on. Let's talk through the plans.","I'm here. Let's improve."])); }
 }
-$("coachToggleBtn").addEventListener("click",()=>{ coachOn=!coachOn; applyCoach(); });
+$("coachToggleBtn").addEventListener("click",()=>{ coachOn=!coachOn;
+  try{ localStorage.setItem("coachOn", coachOn?"1":"0"); }catch(e){}
+  applyCoach(); });
+if(localStorage.getItem("coachOn")==="1"){ coachOn=true; applyCoach(true); }
 function coachDefaultPort(){
   const b=$("coachBackendSel").value;
   return b==="llamacpp" ? 8080 : b==="ollama" ? 11434 : "";
