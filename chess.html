@@ -200,7 +200,8 @@
 <body>
 <header>
   <h1>♞ Mikey's Chess</h1><span class="sub">local Stockfish 10 · no account needed</span>
-  <button class="primary" id="startTopBtn" style="margin-left:auto">▶ Start game</button>
+  <select id="timeTopSel" style="margin-left:auto" title="Time control"></select>
+  <button class="primary" id="startTopBtn">▶ Start game</button>
   <span id="engineStatus">loading engine…</span>
 </header>
 
@@ -265,9 +266,12 @@
       <div class="row" style="margin-top:8px"><label>Time</label>
         <select id="timeSel" style="flex:1">
           <option value="0" selected>Unlimited</option>
+          <option value="180+0">3 + 0 · Blitz</option>
           <option value="180+2">3 + 2 · Blitz</option>
           <option value="300+0">5 + 0 · Blitz</option>
+          <option value="300+3">5 + 3 · Blitz</option>
           <option value="600+0">10 + 0 · Rapid</option>
+          <option value="600+5">10 + 5 · Rapid</option>
           <option value="900+10">15 + 10 · Rapid</option>
         </select>
       </div>
@@ -1698,6 +1702,17 @@ function startGame(){
 }
 $("newGameBtn").addEventListener("click",startGame);
 $("startTopBtn").addEventListener("click",startGame);
+(function(){                                   // header time picker mirrors the setup one
+  const top=$("timeTopSel"), main=$("timeSel");
+  top.innerHTML=main.innerHTML;
+  const saved=localStorage.getItem("timeControl");
+  if(saved && [...main.options].some(o=>o.value===saved)){ main.value=saved; }
+  top.value=main.value;
+  const sync=(from,to)=>{ to.value=from.value;
+    try{ localStorage.setItem("timeControl",from.value); }catch(e){} };
+  top.addEventListener("change",()=>sync(top,main));
+  main.addEventListener("change",()=>sync(main,top));
+})();
 $("flipBtn").addEventListener("click",()=>{ orientation = orientation==="w"?"b":"w"; evalBarFen=null; buildBoard(); renderBoard(); });
 $("resignBtn").addEventListener("click",()=>{
   if(!gameActive) return;
