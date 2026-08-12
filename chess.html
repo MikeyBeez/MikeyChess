@@ -949,16 +949,14 @@ async function engineOpeningMove(){
 }
 
 function engineThinkTimeMs(){
-  // Even pacing: budget the clock over ~20 moves (a 5-minute game = ~15s per
-  // move standard), then add or subtract a little at random so it feels human
-  // rather than metronomic. If the game runs longer than the budget, the 15%
-  // cap below makes the engine naturally speed up as its clock drains — real
-  // time trouble. Safety valves: scramble mode when short, 15% cap per move.
+  // Even pacing: base time / 50 is the standard think (3-min game = 3.6s/move,
+  // 5-min = 6s, 10-min = 12s), plus a random bit added or removed each move.
+  // Safety valves: scramble mode when short, never >15% of remaining time.
   if(!timed()) return 0;
   const engColor = humanColor==="w"?"b":"w";
   const myMs = clockMs[engColor];
   const base = tc.base*1000, inc = tc.inc*1000;
-  const mean = base/20 + inc*0.6;
+  const mean = base/50 + inc*0.6;
   let t = mean * (0.75 + Math.random()*0.5);         // mean ±25%
   if(myMs<20000) t = Math.min(t, 800+Math.random()*1200);   // scramble mode
   t = Math.min(t, myMs*0.15);
