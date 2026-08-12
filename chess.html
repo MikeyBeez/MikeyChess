@@ -1362,6 +1362,12 @@ async function applyCoachConn(){
     url = "http://"+(raw||"127.0.0.1")+":"+port;
   }
   localStorage.setItem("coachHostUrl",url); localStorage.setItem("coachBackend",b);
+  if(!assistantUp){
+    if(b==="foundation"){ addMsg("sys","Foundation API mode needs the optional assistant server (it keeps your API key out of the browser) \u2014 see the README."); return; }
+    await loadCoachModels();
+    addMsg("sys","Coach connected directly to "+escapeHtml(url)+" ("+b+").");
+    return;
+  }
   try{
     const r=await fetch(REACHI_BASE+"/host",{method:"POST",
       headers:{"Content-Type":"application/json"}, body:JSON.stringify({host:url})});
@@ -1371,8 +1377,32 @@ async function applyCoachConn(){
   }catch(e){ addMsg("sys","Couldn't reach reachi to set the host."); }
 }
 $("coachConnBtn").addEventListener("click",applyCoachConn);
+async function directModels(){
+  const host=localStorage.getItem("coachHostUrl")||"http://127.0.0.1:11434";
+  const be=localStorage.getItem("coachBackend")||"ollama";
+  try{
+    if(be==="llamacpp"){
+      const r=await fetch(host+"/v1/models"); if(!r.ok) return [];
+      const j=await r.json(); const arr=j.data||j.models||[];
+      return arr.map(m=>m.id||m.name||m.model).filter(Boolean);
+    }
+    const r=await fetch(host+"/api/tags"); if(!r.ok) return [];
+    return ((await r.json()).models||[]).map(m=>m.name).filter(Boolean);
+  }catch(e){ return []; }
+}
 async function loadCoachModels(){
   const sel=$("coachModelSel");
+  if(!assistantUp){                          // direct mode: list from the model server
+    const models=await directModels();
+    sel.innerHTML="";
+    models.forEach(mn=>{ const o=document.createElement("option");
+      o.value=mn; o.textContent=mn.split("/").pop(); sel.appendChild(o); });
+    const want=localStorage.getItem("coachModel");
+    if(want && models.includes(want)) sel.value=want;
+    else if(models.length) localStorage.setItem("coachModel", sel.value);
+    if(!models.length){ sel.innerHTML="<option>\u2014</option>"; }
+    return;
+  }
   try{
     let r=await fetch(REACHI_BASE+"/models"); if(!r.ok) return;
     let j=await r.json();
@@ -1413,7 +1443,14 @@ $("coachModelSel").addEventListener("change",async e=>{
     if(r.ok) addMsg("sys","Coach model set to "+escapeHtml(m.split("/").pop())+".");
   }catch(e){ addMsg("sys","Couldn't switch model \u2014 is reachi running?"); }
 });
-loadCoachModels();
+(async function probeAssistant(){
+  try{
+    const c=new AbortController(); const t=setTimeout(()=>c.abort(),1500);
+    const r=await fetch(REACHI_BASE+"/health",{signal:c.signal}); clearTimeout(t);
+    assistantUp=!!(r&&r.ok);
+  }catch(e){ assistantUp=false; }
+  loadCoachModels();
+})();
 $("hintBtn").addEventListener("click", giveHint);
 $("teachPlayBtn").addEventListener("click",()=>{
   if(!teachPending) return;
@@ -1495,6 +1532,37 @@ async function coachContext(){
          "The human is playing "+(humanColor==="w"?"White":"Black")+". Opening: "+opening+". "+evalStr+bestStr+
          (lastGradeNote?("Note: "+lastGradeNote+" "):"")+lessonsDigest();
 }
+let assistantUp=false;                       // is a reachi assistant server present?
+function stripThink(t){ return String(t).replace(/<think>[\s\S]*?<\/think>/g,"").trim(); }
+async function directAsk(prompt){
+  // No assistant server: talk to the model server straight from the browser.
+  const host=localStorage.getItem("coachHostUrl")||"http://127.0.0.1:11434";
+  const be=localStorage.getItem("coachBackend")||"ollama";
+  const model=localStorage.getItem("coachModel")||$("coachModelSel").value||"";
+  try{
+    const ctrl=new AbortController(); const to=setTimeout(()=>ctrl.abort(),180000);
+    let text=null;
+    if(be==="llamacpp"){
+      const r=await fetch(host+"/v1/chat/completions",{method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({model:model||"default",messages:[{role:"user",content:prompt}]}),
+        signal:ctrl.signal});
+      if(r.ok){ const j=await r.json();
+        text=j.choices&&j.choices[0]&&j.choices[0].message&&j.choices[0].message.content; }
+    } else {
+      const r=await fetch(host+"/api/chat",{method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({model:model,messages:[{role:"user",content:prompt}],stream:false}),
+        signal:ctrl.signal});
+      if(r.ok){ const j=await r.json(); text=j.message&&j.message.content; }
+    }
+    clearTimeout(to);
+    return text?stripThink(text):null;
+  }catch(e){ return null; }
+}
+async function llmAsk(prompt){
+  return assistantUp ? reachiAsk(prompt) : directAsk(prompt);
+}
 async function reachiAsk(prompt){
   try{
     const ctrl=new AbortController(); const to=setTimeout(()=>ctrl.abort(),180000); // 180s: first ask after idle may cold-load the model from pop's HDD (~2 min)
@@ -1513,9 +1581,9 @@ async function askCoach(userText){
   $("chatInput").value="";
   const pending=addMsg("coach","…");
   const ctx=await coachContext();
-  const reply=await reachiAsk(coachSystemPreamble()+"\n"+ctx+"\n"+recentHistoryText()+"\nPlayer: "+userText+"\nCoach:");
+  const reply=await llmAsk(coachSystemPreamble()+"\n"+ctx+"\n"+recentHistoryText()+"\nPlayer: "+userText+"\nCoach:");
   if(pending) pending.remove();
-  if(reply==null){ addMsg("sys","Coach LLM not reachable — open this game from reachi's server (its http://…:8765/ address, e.g. pop) so it can answer."); return; }
+  if(reply==null){ addMsg("sys","Coach chat needs an LLM server. Easiest: install Ollama (ollama.com), \u2018ollama pull llama3.1:8b\u2019, then set host + model above. Book guidance, grading, and the voice all work without it."); return; }
   chatLog.push({you:userText, coach:reply});
   addMsg("coach", escapeHtml(reply));
   speak(reply);
@@ -1529,7 +1597,7 @@ async function proactiveComment(kind){
       ? "The game is just starting. In one short, friendly sentence, greet the player and say what kind of game to aim for."
       : "In one short, encouraging sentence, tell the player the main plan for their side in this position.";
     const pending=addMsg("coach","…");
-    const reply=await reachiAsk(coachSystemPreamble()+"\n"+ctx+"\n"+ask);
+    const reply=await llmAsk(coachSystemPreamble()+"\n"+ctx+"\n"+ask);
     if(pending) pending.remove();
     if(reply){ chatLog.push({you:"(the coach commented on the position)", coach:reply});
                addMsg("coach", escapeHtml(reply)); speak(reply); }

@@ -55,33 +55,50 @@ chats about the position, speaks aloud, and keeps a lesson memory — it knows
 which openings it has already shown you and reminds you when you repeat a
 mistake it has flagged before.
 
-The coach's brain is [reachi](https://github.com/MikeyBeez/reachi), a small
-local assistant server that talks to any LLM you choose and does neural TTS.
-The chess page calls three of its HTTP endpoints: `/ask` (answers), `/speak`
-(voice), and `/memory` (lesson storage).
+Most of the coach needs **no extra software at all**: opening narration, book
+options, move grading, hints, and the (browser) voice are built into the page.
+Only the free-form chat needs an LLM — and the page can talk to one directly.
 
-### Setup
+### Setup — the simple way (any machine)
 
-1. Clone and prepare reachi:
-
-   ```bash
-   git clone https://github.com/MikeyBeez/reachi ~/Code/reachi
-   cd ~/Code/reachi
-   python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
-   cp .env.example .env      # then edit .env — see "Choosing a model" below
-   ```
-
-2. Install the API as an always-on service (macOS):
+1. Install [Ollama](https://ollama.com) and pull any instruct model:
 
    ```bash
-   ./install_api_service.command
+   ollama pull llama3.1:8b
    ```
 
-3. Open the game from reachi's server: **http://127.0.0.1:8765/** — the API
-   serves `chess.html` itself (set `REACHI_WEB_ROOT` if your copy lives
-   elsewhere). Turn the **Coach** toggle on. Opening the page any other way
-   (double-click, another port) also works on the same machine: it falls back
-   to calling reachi at `127.0.0.1:8765`.
+2. Serve the page (browsers block LLM calls from `file://`):
+
+   ```bash
+   ./play-chess.command        # or: python3 -m http.server 8787
+   ```
+
+3. Turn the **Coach** toggle on. In the Coach panel, leave the backend on
+   *Ollama*, host blank (local), hit **Apply**, and pick your model from the
+   dropdown. Done — the coach chats through your local model, speaks with the
+   browser's voice, and keeps its lesson memory in the browser.
+
+   A local [llama.cpp](https://github.com/ggerganov/llama.cpp) `llama-server`
+   works too: choose *llama.cpp* as the backend and give its port.
+
+### Setup — with the reachi assistant (optional extra)
+
+[reachi](https://github.com/MikeyBeez/reachi) is a small local assistant server.
+Adding it upgrades the coach with a neural (Piper) voice, lesson memory that
+follows you across browsers and machines, and cloud foundation-model support
+(the API key stays server-side). The page auto-detects it — no configuration.
+
+```bash
+git clone https://github.com/MikeyBeez/reachi ~/Code/reachi
+cd ~/Code/reachi
+python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
+cp .env.example .env          # pick your model — see below
+./install_api_service.command # macOS always-on service
+```
+
+Then open the game at **http://127.0.0.1:8765/** (reachi serves it; set
+`REACHI_WEB_ROOT` if your copy lives elsewhere). Opening the page any other
+way also works — it finds reachi at `127.0.0.1:8765` automatically.
 
 ### Choosing a model
 
@@ -137,14 +154,17 @@ service's environment.
 
 ### Lesson memory
 
-Lessons are stored by reachi on the machine running the API, in
+Without reachi, lessons live in your browser's localStorage. With reachi they
+are stored on the machine running the API, in
 `~/Library/Application Support/reachi/memory/chess-lessons.json`, so the
 coach's memory of you follows you across browsers. The browser keeps a
 localStorage copy as an offline cache.
 
 ### If the coach won't answer
 
-Run `diagnose_coach.command` in the reachi repo — it checks each hop
+No reachi: make sure Ollama is running (`ollama serve`) and a model is pulled,
+and that you opened the page over http (not `file://`). With reachi: run
+`diagnose_coach.command` in the reachi repo — it checks each hop
 (API service → model host → full round-trip) and tells you which one is broken.
 The usual suspects: the API service isn't running, the tunnel to a remote GPU
 box is down, or the model is still cold-loading (first answer after a restart
