@@ -948,11 +948,27 @@ async function engineOpeningMove(){
   return pickWeighted(kept, weights).move;
 }
 
+function engineThinkTimeMs(){
+  // Even pacing: budget the clock over ~45 moves (plus most of the increment),
+  // then add or subtract a little at random so it feels human rather than
+  // metronomic. Safety valves: hurry when short on time, never burn more than
+  // 15% of what's left on one move.
+  if(!timed()) return 0;
+  const engColor = humanColor==="w"?"b":"w";
+  const myMs = clockMs[engColor];
+  const base = tc.base*1000, inc = tc.inc*1000;
+  const mean = base/45 + inc*0.6;
+  let t = mean * (0.75 + Math.random()*0.5);         // mean ±25%
+  if(myMs<20000) t = Math.min(t, 800+Math.random()*1200);   // scramble mode
+  t = Math.min(t, myMs*0.15);
+  return Math.max(300, t);
+}
 async function maybeEngineMove(){
   if(!gameActive || !engineOk) { checkGameEnd(); return; }
   if(game.game_over()){ checkGameEnd(); return; }
   if(game.turn()===humanColor) return;
   engineThinking=true; $("thinking").classList.add("on");
+  const t0=performance.now();
   const cfg=LEVELS[level];
   await engine.ready();
   // Try opening variety first; if it declines (past the opening, or one clearly
@@ -966,8 +982,11 @@ async function maybeEngineMove(){
     const res=await engine.go(game.fen(), "go depth "+(cfg.skill+1), cfg.skill);
     bestUci = res.best;
   }
+  const think=engineThinkTimeMs();
+  const waitMs=think-(performance.now()-t0);
+  if(waitMs>0) await new Promise(r=>setTimeout(r,waitMs));
   engineThinking=false; $("thinking").classList.remove("on");
-  if(!gameActive) return; // resigned / new game while thinking
+  if(!gameActive) return; // resigned / new game / flag fell while thinking
   if(bestUci && bestUci!=="(none)"){
     const fromSq=bestUci.slice(0,2), toSq=bestUci.slice(2,4);
     const moving=game.get(fromSq);
